@@ -1,0 +1,305 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 200 25% 4%;
+    --foreground: 200 50% 93%;
+
+    --card: 200 18% 9%;
+    --card-foreground: 200 50% 93%;
+
+    --popover: 200 18% 9%;
+    --popover-foreground: 200 50% 93%;
+
+    --primary: 187 100% 50%;
+    --primary-foreground: 200 25% 4%;
+
+    --secondary: 156 100% 50%;
+    --secondary-foreground: 200 25% 4%;
+
+    --muted: 200 20% 15%;
+    --muted-foreground: 197 25% 45%;
+
+    --accent: 200 20% 15%;
+    --accent-foreground: 200 50% 93%;
+
+    --destructive: 350 100% 62%;
+    --destructive-foreground: 200 50% 93%;
+
+    --warn: 42 100% 50%;
+    --warn-foreground: 200 25% 4%;
+
+    --border: 196 30% 14%;
+    --border2: 196 25% 22%;
+    --input: 196 30% 14%;
+    --ring: 187 100% 50%;
+
+    --radius: 0.75rem;
+
+    --bg2: 200 22% 7%;
+    --bg3: 200 20% 10%;
+
+    --sidebar-background: 200 25% 4%;
+    --sidebar-foreground: 200 50% 93%;
+    --sidebar-primary: 187 100% 50%;
+    --sidebar-primary-foreground: 200 25% 4%;
+    --sidebar-accent: 200 20% 15%;
+    --sidebar-accent-foreground: 200 50% 93%;
+    --sidebar-border: 196 30% 14%;
+    --sidebar-ring: 187 100% 50%;
+
+    --font-head: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+    --font-inter: 'Inter', sans-serif;
+
+    /* Glow colors */
+    --glow-primary: rgba(0, 229, 255, 0.15);
+    --glow-secondary: rgba(0, 255, 157, 0.12);
+    --glow-warn: rgba(255, 184, 0, 0.12);
+    --glow-danger: rgba(255, 61, 90, 0.12);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.65;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-image:
+      linear-gradient(hsl(var(--border)) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.28;
+    pointer-events: none;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: hsl(var(--background)); }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border2));
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.4); }
+}
+
+@layer utilities {
+  .font-head { font-family: var(--font-head); }
+  .font-mono { font-family: var(--font-mono); }
+  .font-inter { font-family: var(--font-inter); }
+
+  /* Glassmorphism */
+  .glass {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(16px) saturate(1.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+    border: 1px solid hsl(var(--border2) / 0.5);
+  }
+
+  .glass-card {
+    background: linear-gradient(135deg, hsl(var(--card) / 0.8) 0%, hsl(var(--bg3) / 0.9) 100%);
+    backdrop-filter: blur(20px) saturate(1.8);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+    border: 1px solid hsl(var(--border2) / 0.4);
+  }
+
+  /* Neon Glow Effects */
+  .glow-primary {
+    box-shadow: 0 0 20px var(--glow-primary), 0 0 40px var(--glow-primary);
+  }
+  .glow-secondary {
+    box-shadow: 0 0 20px var(--glow-secondary), 0 0 40px var(--glow-secondary);
+  }
+  .glow-warn {
+    box-shadow: 0 0 20px var(--glow-warn);
+  }
+  .glow-danger {
+    box-shadow: 0 0 20px var(--glow-danger);
+  }
+
+  /* Text glow */
+  .text-glow-primary { text-shadow: 0 0 20px hsl(var(--primary) / 0.6); }
+  .text-glow-secondary { text-shadow: 0 0 20px hsl(var(--secondary) / 0.6); }
+
+  /* Gradient text */
+  .text-gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Shimmer overlay */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.05) 50%,
+      transparent 100%
+    );
+    animation: shimmer 2.5s ease-in-out infinite;
+  }
+
+  /* Status dot */
+  .status-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-live::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: hsl(var(--secondary));
+    box-shadow: 0 0 8px hsl(var(--secondary) / 0.8);
+    animation: pulse-dot 1.5s ease-in-out infinite;
+  }
+}
+
+/* ── Animations ────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px currentColor; }
+  50% { opacity: 0.4; transform: scale(0.75); box-shadow: none; }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 12px var(--glow-primary); }
+  50% { box-shadow: 0 0 28px var(--glow-primary), 0 0 48px var(--glow-primary); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes border-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Animation utility classes */
+.animate-fade-up   { animation: fadeUp 0.5s ease both; }
+.animate-fade-in   { animation: fadeIn 0.4s ease both; }
+.animate-slide-left { animation: slideInLeft 0.4s ease both; }
+.animate-float     { animation: float 4s ease-in-out infinite; }
+.animate-glow-pulse { animation: glow-pulse 2.5s ease-in-out infinite; }
+.animate-spin-slow { animation: spin-slow 8s linear infinite; }
+.animate-shimmer   { animation: shimmer 2.5s ease-in-out infinite; }
+.animate-count-up  { animation: count-up 0.6s ease both; }
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+
+/* ── Card hover effects ────────────────────────────────── */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 20px var(--glow-primary);
+}
+
+/* ── Gradient borders ──────────────────────────────────── */
+.border-gradient-primary {
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+.border-gradient-primary::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.4), hsl(var(--secondary) / 0.2), transparent);
+  z-index: -1;
+}
+
+/* ── Input focus ring ──────────────────────────────────── */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.25), 0 0 12px hsl(var(--primary) / 0.1);
+}
+
+/* ── Button press effect ───────────────────────────────── */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ── Recharts custom styles ────────────────────────────── */
+.recharts-tooltip-wrapper {
+  filter: drop-shadow(0 4px 16px rgba(0,0,0,0.5));
+}

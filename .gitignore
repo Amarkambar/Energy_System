@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+env.bak/
+venv.bak/
+Pipfile*/Pipfile.lock
+.tox/
+.coverage
+.coverage.*
+.pytest_cache/
+.pytest_cache/*
+.pylint_cache/
+coverage.xml
+*.cover
+.hypothesis/
+.dmypy.json
+dmypy.json
+htmlcov/
+.cython-*.so
+
+# Virtualenv
+.venv
+env/
+venv/
+ENV/
+
+# PyInstaller
+**/__pycache__
+**/build/
+**/*.spec
+
+# VSCode
+.vscode/
+
+# Data/Cache/Models/Large files
+backend/data/cache/
+backend/data/real/
+backend/data/uploads/
+backend/models/saved/
+*.parquet
+*.pkl
+*.log
+backend/server_out.log
+
+# Environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# Jupyter notebooks (dev scratch files)
+*.ipynb
+
+# Scratch/temp files
+backend/data/a.txt
+
+# Frontend/NodeJS
+frontend/node_modules/
+frontend/dist/
+frontend/bun.lockb
+frontend/bun.lock  # if lockfile binary or regenerated
+
+# Docker/OS
+**/*.dockerignore
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo

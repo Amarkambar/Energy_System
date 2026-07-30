@@ -1,0 +1,337 @@
+timestamp,consumption_kwh,voltage,temperature,load_factor,is_peak_hour,maintenance_status,efficiency_class
+01-01-2024 00:00,253.8,,40.4,0.64,No,Normal,Moderate
+01-01-2024 01:00,319.5,233.4,29.8,0.94,No,Normal,Inefficient
+01-01-2024 02:00,206.8,230.9,28.8,0.36,No,Normal,Efficient
+01-01-2024 03:00,299.8,226.7,30.8,0.38,No,Normal,Efficient
+01-01-2024 04:00,238,226.4,24.2,0.48,No,Scheduled,Efficient
+01-01-2024 05:00,234.8,225.6,27.1,0.6,No,Normal,Moderate
+01-01-2024 06:00,162.8,241.5,41.7,0.59,No,Normal,Moderate
+01-01-2024 07:00,287.5,241.4,39.9,0.49,No,Normal,Efficient
+01-01-2024 08:00,243.2,,30.1,0.54,No,Required,Efficient
+01-01-2024 09:00,230.8,229.8,24.2,0.37,No,Normal,Efficient
+01-01-2024 10:00,207.4,234.6,35.6,0.34,No,Required,Very Efficient
+01-01-2024 11:00,123.4,239.2,33.2,0.66,No,Normal,Moderate
+01-01-2024 12:00,225.3,232.9,34.6,0.32,No,Normal,Very Efficient
+01-01-2024 13:00,165.3,234,27.7,0.26,No,Normal,Very Efficient
+01-01-2024 14:00,225.9,236.4,27.4,0.25,No,Normal,Very Efficient
+01-01-2024 15:00,282.1,232.2,26.1,0.53,No,Scheduled,Efficient
+01-01-2024 16:00,300,,32.7,0.75,No,Normal,Inefficient
+01-01-2024 17:00,330,235.5,39.4,0.93,No,Normal,Inefficient
+01-01-2024 18:00,224.1,237.3,27.1,0.32,Yes,Required,Very Efficient
+01-01-2024 19:00,229.9,232.9,33.3,0.61,Yes,Scheduled,Moderate
+01-01-2024 20:00,120.6,230.3,31.8,0.62,Yes,Normal,Moderate
+01-01-2024 21:00,192.1,226.1,34.3,0.56,Yes,Normal,Moderate
+01-01-2024 22:00,133.7,237.8,28.7,0.32,Yes,Normal,Very Efficient
+01-01-2024 23:00,333.5,231.7,38.4,0.89,No,Normal,Inefficient
+02-01-2024 00:00,316.8,,27.7,0.33,No,Scheduled,Very Efficient
+02-01-2024 01:00,326.7,225.9,39.6,0.56,No,Normal,Moderate
+02-01-2024 02:00,256.9,225.7,39.9,0.84,No,Normal,Inefficient
+02-01-2024 03:00,251.8,238.4,32.2,0.44,No,Scheduled,Efficient
+02-01-2024 04:00,172.5,232.4,30.2,0.45,No,Normal,Efficient
+02-01-2024 05:00,299.4,238.9,38.6,0.46,No,Scheduled,Efficient
+02-01-2024 06:00,171.8,233.5,30.1,0.2,No,Normal,Very Efficient
+02-01-2024 07:00,236.8,227.7,29,0.5,No,Normal,Efficient
+02-01-2024 08:00,209.6,,39.1,0.31,No,Normal,Very Efficient
+02-01-2024 09:00,239.4,238.6,27.5,0.73,No,Normal,Moderate
+02-01-2024 10:00,218.8,239.1,26.6,0.27,No,Normal,Very Efficient
+02-01-2024 11:00,227.4,239.8,33.4,0.54,No,Normal,Efficient
+02-01-2024 12:00,312.2,234.2,41,0.91,No,Normal,Inefficient
+02-01-2024 13:00,137.2,230.3,35.2,0.49,No,Normal,Efficient
+02-01-2024 14:00,239.1,228.9,25.1,0.32,No,Scheduled,Very Efficient
+02-01-2024 15:00,304.2,231.5,31.1,0.73,No,Normal,Moderate
+02-01-2024 16:00,311.1,,39.4,0.69,No,Normal,Moderate
+02-01-2024 17:00,120.5,236.6,28.7,0.59,No,Normal,Moderate
+02-01-2024 18:00,154.6,225.5,24.5,0.6,Yes,Required,Moderate
+02-01-2024 19:00,298.6,231.3,31.5,0.27,Yes,Normal,Very Efficient
+02-01-2024 20:00,225.2,240,27.5,0.65,Yes,Normal,Moderate
+02-01-2024 21:00,143.3,237.6,39.8,0.48,Yes,Normal,Efficient
+02-01-2024 22:00,178.1,237.3,39.5,0.74,Yes,Normal,Moderate
+02-01-2024 23:00,215.5,237.8,28.2,0.53,No,Required,Efficient
+03-01-2024 00:00,192.9,,24.6,0.49,No,Required,Efficient
+03-01-2024 01:00,332.3,231.8,31.7,0.61,No,Normal,Moderate
+03-01-2024 02:00,252.7,230.3,35.7,0.31,No,Required,Very Efficient
+03-01-2024 03:00,194,229.3,32.3,0.4,No,Normal,Efficient
+03-01-2024 04:00,177,229.8,29.1,0.33,No,Normal,Very Efficient
+03-01-2024 05:00,211.7,234.2,25.6,0.65,No,Normal,Moderate
+03-01-2024 06:00,178.2,237.3,35.5,0.76,No,Normal,Inefficient
+03-01-2024 07:00,217.4,241.9,31.7,0.94,No,Required,Inefficient
+03-01-2024 08:00,263.1,,32.7,0.32,No,Normal,Very Efficient
+03-01-2024 09:00,337.2,240.7,24.1,0.84,No,Normal,Inefficient
+03-01-2024 10:00,339.4,229.8,34.3,0.86,No,Normal,Inefficient
+03-01-2024 11:00,177.7,233,38.1,0.87,No,Scheduled,Inefficient
+03-01-2024 12:00,184.1,236.1,30.8,0.59,No,Normal,Moderate
+03-01-2024 13:00,186.1,235.3,41.9,0.36,No,Scheduled,Efficient
+03-01-2024 14:00,136.8,227.5,32.1,0.58,No,Normal,Moderate
+03-01-2024 15:00,121,228.9,31.8,0.77,No,Normal,Inefficient
+03-01-2024 16:00,144.7,,38.9,0.37,No,Normal,Efficient
+03-01-2024 17:00,157.6,226.2,42,0.25,No,Required,Very Efficient
+03-01-2024 18:00,284.3,238.4,33.5,0.63,Yes,Scheduled,Moderate
+03-01-2024 19:00,189.8,237.8,40.4,0.36,Yes,Scheduled,Efficient
+03-01-2024 20:00,262.4,240.2,34.7,0.47,Yes,Normal,Efficient
+03-01-2024 21:00,153.8,229.5,34.2,0.85,Yes,Normal,Inefficient
+03-01-2024 22:00,201,235.6,40,0.27,Yes,Normal,Very Efficient
+03-01-2024 23:00,148.6,236.3,36.3,0.91,No,Normal,Inefficient
+04-01-2024 00:00,175.8,,36.3,0.65,No,Normal,Moderate
+04-01-2024 01:00,338.1,230.5,41.9,0.92,No,Scheduled,Inefficient
+04-01-2024 02:00,185.3,231.7,30.5,0.51,No,Normal,Efficient
+04-01-2024 03:00,336.3,227,30.2,0.84,No,Normal,Inefficient
+04-01-2024 04:00,195.8,241.4,28.4,0.52,No,Normal,Efficient
+04-01-2024 05:00,231.3,230.2,26.6,0.25,No,Normal,Very Efficient
+04-01-2024 06:00,253.1,232.3,26,0.25,No,Normal,Very Efficient
+04-01-2024 07:00,289.7,237.7,25.2,0.31,No,Normal,Very Efficient
+04-01-2024 08:00,300.8,,40.3,0.29,No,Required,Very Efficient
+04-01-2024 09:00,257.4,227.8,25.5,0.57,No,Required,Moderate
+04-01-2024 10:00,269.7,226.6,28.6,0.85,No,Normal,Inefficient
+04-01-2024 11:00,157.6,227.8,31.1,0.22,No,Scheduled,Very Efficient
+04-01-2024 12:00,136.5,226.2,28.4,0.58,No,Normal,Moderate
+04-01-2024 13:00,203.1,239.1,32,0.79,No,Normal,Inefficient
+04-01-2024 14:00,125.5,227.6,33.2,0.6,No,Normal,Moderate
+04-01-2024 15:00,231,226.5,28.6,0.77,No,Normal,Inefficient
+04-01-2024 16:00,302.1,,30.4,0.67,No,Normal,Moderate
+04-01-2024 17:00,288.3,226.2,40.4,0.75,No,Normal,Inefficient
+04-01-2024 18:00,150.6,229.9,30,0.49,Yes,Normal,Efficient
+04-01-2024 19:00,144.5,230.1,39.6,0.28,Yes,Normal,Very Efficient
+04-01-2024 20:00,154.2,240.2,32.6,0.5,Yes,Scheduled,Efficient
+04-01-2024 21:00,294.4,238.1,40.6,0.86,Yes,Scheduled,Inefficient
+04-01-2024 22:00,159.3,235.4,41.5,0.79,Yes,Normal,Inefficient
+04-01-2024 23:00,252.1,225.2,40,0.84,No,Normal,Inefficient
+05-01-2024 00:00,190.8,,34.1,0.27,No,Normal,Very Efficient
+05-01-2024 01:00,232,237.2,37.9,0.68,No,Scheduled,Moderate
+05-01-2024 02:00,295.9,228.4,30.1,0.77,No,Normal,Inefficient
+05-01-2024 03:00,274.3,238.2,29.3,0.27,No,Normal,Very Efficient
+05-01-2024 04:00,267,235,25.2,0.67,No,Normal,Moderate
+05-01-2024 05:00,123.2,238.5,27.1,0.46,No,Normal,Efficient
+05-01-2024 06:00,329.7,230.3,24.9,0.75,No,Normal,Inefficient
+05-01-2024 07:00,155.1,241.8,26.9,0.3,No,Normal,Very Efficient
+05-01-2024 08:00,194.7,,26,0.57,No,Normal,Moderate
+05-01-2024 09:00,251.6,232.5,39.1,0.67,No,Normal,Moderate
+05-01-2024 10:00,251.7,237.3,24.3,0.92,No,Normal,Inefficient
+05-01-2024 11:00,290.4,229.6,38.4,0.58,No,Normal,Moderate
+05-01-2024 12:00,336.4,226,34.1,0.93,No,Scheduled,Inefficient
+05-01-2024 13:00,279,234.4,37.3,0.55,No,Normal,Moderate
+05-01-2024 14:00,182.6,226.8,29.7,0.54,No,Normal,Efficient
+05-01-2024 15:00,222.1,228.4,26.7,0.26,No,Scheduled,Very Efficient
+05-01-2024 16:00,143.1,,33.2,0.87,No,Normal,Inefficient
+05-01-2024 17:00,268.3,228.4,35.9,0.72,No,Scheduled,Moderate
+05-01-2024 18:00,308.8,240.6,24.3,0.74,Yes,Normal,Moderate
+05-01-2024 19:00,216.8,230.6,29.1,0.94,Yes,Scheduled,Inefficient
+05-01-2024 20:00,232.7,225.5,25.7,0.81,Yes,Required,Inefficient
+05-01-2024 21:00,225.5,232,30,0.9,Yes,Normal,Inefficient
+05-01-2024 22:00,160.3,240.9,31.7,0.3,Yes,Normal,Very Efficient
+05-01-2024 23:00,157.6,235.9,29.2,0.33,No,Normal,Very Efficient
+06-01-2024 00:00,244.1,,35.8,0.35,No,Normal,Efficient
+06-01-2024 01:00,319.3,230,39.3,0.76,No,Scheduled,Inefficient
+06-01-2024 02:00,300.8,230.6,34.7,0.93,No,Normal,Inefficient
+06-01-2024 03:00,146.1,232.2,27,0.62,No,Normal,Moderate
+06-01-2024 04:00,176.6,231,36.7,0.29,No,Normal,Very Efficient
+06-01-2024 05:00,179.1,232.9,38.7,0.86,No,Normal,Inefficient
+06-01-2024 06:00,188.9,227.9,26,0.77,No,Required,Inefficient
+06-01-2024 07:00,243.7,227.4,29.8,0.87,No,Scheduled,Inefficient
+06-01-2024 08:00,199.3,,37.9,0.52,No,Normal,Efficient
+06-01-2024 09:00,198.4,232.4,36.9,0.93,No,Scheduled,Inefficient
+06-01-2024 10:00,220.7,236.9,40.9,0.93,No,Normal,Inefficient
+06-01-2024 11:00,232.6,240.3,29.3,0.75,No,Normal,Inefficient
+06-01-2024 12:00,149.2,232.3,40.2,0.5,No,Normal,Efficient
+06-01-2024 13:00,281.3,233.9,36.6,0.87,No,Normal,Inefficient
+06-01-2024 14:00,309.8,236.7,29.4,0.69,No,Normal,Moderate
+06-01-2024 15:00,219.7,236.8,36.7,0.76,No,Normal,Inefficient
+06-01-2024 16:00,331,,40.5,0.37,No,Normal,Efficient
+06-01-2024 17:00,171.4,232.7,30.5,0.95,No,Normal,Inefficient
+06-01-2024 18:00,274.9,232.6,24.8,0.48,Yes,Normal,Efficient
+06-01-2024 19:00,163.5,225.5,24.2,0.93,Yes,Required,Inefficient
+06-01-2024 20:00,213.1,231.4,29.5,0.65,Yes,Scheduled,Moderate
+06-01-2024 21:00,200.3,236.9,28,0.76,Yes,Normal,Inefficient
+06-01-2024 22:00,177.8,230.4,37.1,0.46,Yes,Normal,Efficient
+06-01-2024 23:00,299.4,237.5,41.9,0.24,No,Normal,Very Efficient
+07-01-2024 00:00,248.7,,27.6,0.58,No,Normal,Moderate
+07-01-2024 01:00,227.1,231.1,27.6,0.94,No,Required,Inefficient
+07-01-2024 02:00,163.5,229.7,38.8,0.39,No,Normal,Efficient
+07-01-2024 03:00,163.4,237.8,29.5,0.65,No,Scheduled,Moderate
+07-01-2024 04:00,259.5,240.4,35.8,0.25,No,Normal,Very Efficient
+07-01-2024 05:00,158.3,237.8,28,0.83,No,Normal,Inefficient
+07-01-2024 06:00,288.7,233.1,28.6,0.21,No,Normal,Very Efficient
+07-01-2024 07:00,337,239.1,41.7,0.6,No,Normal,Moderate
+07-01-2024 08:00,137.9,,26.5,0.33,No,Scheduled,Very Efficient
+07-01-2024 09:00,189.1,230.4,30.3,0.45,No,Normal,Efficient
+07-01-2024 10:00,229.5,226.4,38.3,0.47,No,Normal,Efficient
+07-01-2024 11:00,318.1,240.4,36.3,0.9,No,Scheduled,Inefficient
+07-01-2024 12:00,156,228.7,38.6,0.85,No,Scheduled,Inefficient
+07-01-2024 13:00,200.4,239.4,39.6,0.2,No,Normal,Very Efficient
+07-01-2024 14:00,259.3,241.6,25.2,0.35,No,Scheduled,Efficient
+07-01-2024 15:00,265.6,232.7,29.5,0.84,No,Normal,Inefficient
+07-01-2024 16:00,324.5,,27.3,0.71,No,Normal,Moderate
+07-01-2024 17:00,142.2,228.5,31.9,0.23,No,Scheduled,Very Efficient
+07-01-2024 18:00,132.9,232.4,39.8,0.57,Yes,Normal,Moderate
+07-01-2024 19:00,261.1,230.4,28.3,0.68,Yes,Normal,Moderate
+07-01-2024 20:00,212.9,234.5,31.6,0.64,Yes,Normal,Moderate
+07-01-2024 21:00,197.4,229.1,27.5,0.45,Yes,Normal,Efficient
+07-01-2024 22:00,324.7,236.6,25.2,0.57,Yes,Normal,Moderate
+07-01-2024 23:00,238.9,231.8,33.2,0.37,No,Normal,Efficient
+08-01-2024 00:00,318.3,,33.8,0.43,No,Normal,Efficient
+08-01-2024 01:00,238.6,228.4,33.9,0.68,No,Normal,Moderate
+08-01-2024 02:00,160.2,230.6,25.5,0.81,No,Normal,Inefficient
+08-01-2024 03:00,122,239.3,24.2,0.69,No,Required,Moderate
+08-01-2024 04:00,219.5,230.1,32.7,0.87,No,Scheduled,Inefficient
+08-01-2024 05:00,260.3,229.3,25.9,0.49,No,Normal,Efficient
+08-01-2024 06:00,265.3,235,38.8,0.27,No,Scheduled,Very Efficient
+08-01-2024 07:00,304.3,238.6,31.7,0.69,No,Normal,Moderate
+08-01-2024 08:00,120.5,,36.9,0.78,No,Normal,Inefficient
+08-01-2024 09:00,152.3,241.4,34.4,0.29,No,Normal,Very Efficient
+08-01-2024 10:00,286.2,231,28.6,0.72,No,Normal,Moderate
+08-01-2024 11:00,214.3,231.1,36.9,0.87,No,Normal,Inefficient
+08-01-2024 12:00,288.6,236.9,25.1,0.38,No,Normal,Efficient
+08-01-2024 13:00,148.3,238.8,39,0.46,No,Normal,Efficient
+08-01-2024 14:00,325.3,235.7,34.1,0.51,No,Normal,Efficient
+08-01-2024 15:00,282.3,239.7,31.5,0.52,No,Normal,Efficient
+08-01-2024 16:00,220.4,,36.7,0.81,No,Normal,Inefficient
+08-01-2024 17:00,132.5,234.7,36,0.49,No,Normal,Efficient
+08-01-2024 18:00,177.3,228.5,25.5,0.63,Yes,Required,Moderate
+08-01-2024 19:00,187.6,236.9,26.9,0.7,Yes,Normal,Moderate
+08-01-2024 20:00,287.1,237.9,42,0.6,Yes,Normal,Moderate
+08-01-2024 21:00,323.9,230.8,29.3,0.57,Yes,Required,Moderate
+08-01-2024 22:00,267.8,225.6,39.6,0.2,Yes,Normal,Very Efficient
+08-01-2024 23:00,277.9,225.5,35,0.56,No,Normal,Moderate
+09-01-2024 00:00,260.6,,24.9,0.4,No,Scheduled,Efficient
+09-01-2024 01:00,268.7,226,36.4,0.88,No,Required,Inefficient
+09-01-2024 02:00,229.5,230.8,33.2,0.69,No,Normal,Moderate
+09-01-2024 03:00,245.9,228.2,27.2,0.27,No,Scheduled,Very Efficient
+09-01-2024 04:00,304.5,228.9,36.5,0.36,No,Normal,Efficient
+09-01-2024 05:00,150.9,230.8,34.5,0.83,No,Scheduled,Inefficient
+09-01-2024 06:00,200.1,230.4,32.7,0.23,No,Required,Very Efficient
+09-01-2024 07:00,124,237.2,41.2,0.8,No,Normal,Inefficient
+09-01-2024 08:00,205.7,,24.7,0.64,No,Required,Moderate
+09-01-2024 09:00,233.4,233.8,30.1,0.34,No,Normal,Very Efficient
+09-01-2024 10:00,284.7,228.7,41.7,0.35,No,Scheduled,Efficient
+09-01-2024 11:00,232.3,230.8,37.8,0.86,No,Normal,Inefficient
+09-01-2024 12:00,333.5,237.6,31.1,0.74,No,Scheduled,Moderate
+09-01-2024 13:00,198.8,234.8,37.4,0.33,No,Normal,Very Efficient
+09-01-2024 14:00,184.2,233.1,34.8,0.85,No,Scheduled,Inefficient
+09-01-2024 15:00,202.2,239.6,27.4,0.9,No,Normal,Inefficient
+09-01-2024 16:00,277.7,,28.9,0.75,No,Required,Inefficient
+09-01-2024 17:00,132.7,233.6,38.8,0.81,No,Normal,Inefficient
+09-01-2024 18:00,254.6,230.7,30.4,0.23,Yes,Normal,Very Efficient
+09-01-2024 19:00,212,237,24.7,0.27,Yes,Required,Very Efficient
+09-01-2024 20:00,297.6,240.3,35.2,0.33,Yes,Normal,Very Efficient
+09-01-2024 21:00,218.7,240.1,25.4,0.24,Yes,Scheduled,Very Efficient
+09-01-2024 22:00,209.6,228.7,37.7,0.92,Yes,Normal,Inefficient
+09-01-2024 23:00,247.1,239.5,39.3,0.88,No,Scheduled,Inefficient
+10-01-2024 00:00,226.7,,25,0.74,No,Normal,Moderate
+10-01-2024 01:00,278.6,241.7,38.8,0.38,No,Normal,Efficient
+10-01-2024 02:00,287.8,233.6,37.5,0.22,No,Normal,Very Efficient
+10-01-2024 03:00,308.1,227.7,29.2,0.7,No,Scheduled,Moderate
+10-01-2024 04:00,186.2,235.4,40,0.67,No,Normal,Moderate
+10-01-2024 05:00,161.2,238.1,34.2,0.81,No,Normal,Inefficient
+10-01-2024 06:00,169.2,227.7,27.5,0.44,No,Scheduled,Efficient
+10-01-2024 07:00,303.4,241.8,38.9,0.21,No,Normal,Very Efficient
+10-01-2024 08:00,291.7,,30.5,0.63,No,Scheduled,Moderate
+10-01-2024 09:00,309.4,227.8,34.5,0.53,No,Normal,Efficient
+10-01-2024 10:00,141.2,229.6,27.3,0.88,No,Normal,Inefficient
+10-01-2024 11:00,132.8,225.5,39.4,0.62,No,Normal,Moderate
+10-01-2024 12:00,335.9,225.6,38,0.28,No,Normal,Very Efficient
+10-01-2024 13:00,139.1,235.9,27.5,0.8,No,Normal,Inefficient
+10-01-2024 14:00,185.3,237.7,37.5,0.71,No,Normal,Moderate
+10-01-2024 15:00,275.5,229.4,41.2,0.24,No,Scheduled,Very Efficient
+10-01-2024 16:00,230.6,,39.4,0.74,No,Normal,Moderate
+10-01-2024 17:00,126.4,236.8,40.9,0.47,No,Normal,Efficient
+10-01-2024 18:00,120.9,227.3,30.1,0.75,Yes,Scheduled,Inefficient
+10-01-2024 19:00,182.9,232.3,30.9,0.84,Yes,Required,Inefficient
+10-01-2024 20:00,231.5,226,40.8,0.76,Yes,Normal,Inefficient
+10-01-2024 21:00,172.8,236.3,39,0.89,Yes,Normal,Inefficient
+10-01-2024 22:00,294.7,232.2,41.2,0.77,Yes,Required,Inefficient
+10-01-2024 23:00,173.9,240.2,31.9,0.83,No,Scheduled,Inefficient
+11-01-2024 00:00,198.1,,36.8,0.9,No,Normal,Inefficient
+11-01-2024 01:00,214.3,230.5,37.6,0.32,No,Scheduled,Very Efficient
+11-01-2024 02:00,186,227.9,35.3,0.21,No,Required,Very Efficient
+11-01-2024 03:00,196.4,233.8,36.2,0.75,No,Scheduled,Inefficient
+11-01-2024 04:00,313.6,241.5,28.6,0.37,No,Required,Efficient
+11-01-2024 05:00,269.1,228.2,24.4,0.27,No,Normal,Very Efficient
+11-01-2024 06:00,297.8,229.8,34.5,0.88,No,Normal,Inefficient
+11-01-2024 07:00,193.1,232.1,34.6,0.94,No,Normal,Inefficient
+11-01-2024 08:00,218,,28,0.4,No,Normal,Efficient
+11-01-2024 09:00,149.8,227.2,28.2,0.84,No,Normal,Inefficient
+11-01-2024 10:00,210.7,225.4,25.5,0.42,No,Required,Efficient
+11-01-2024 11:00,253,241,37,0.29,No,Required,Very Efficient
+11-01-2024 12:00,160.3,236,25,0.27,No,Normal,Very Efficient
+11-01-2024 13:00,143.3,225.1,37.8,0.23,No,Normal,Very Efficient
+11-01-2024 14:00,213.7,231,35.1,0.53,No,Scheduled,Efficient
+11-01-2024 15:00,328.3,238.5,30.9,0.85,No,Normal,Inefficient
+11-01-2024 16:00,134.5,,37.7,0.37,No,Normal,Efficient
+11-01-2024 17:00,261.6,233.9,33.4,0.26,No,Normal,Very Efficient
+11-01-2024 18:00,228.6,229.2,24.3,0.67,Yes,Normal,Moderate
+11-01-2024 19:00,282.9,235.3,31.3,0.92,Yes,Scheduled,Inefficient
+11-01-2024 20:00,211.4,231.2,25.2,0.69,Yes,Normal,Moderate
+11-01-2024 21:00,282,226.3,40,0.59,Yes,Normal,Moderate
+11-01-2024 22:00,195,236.2,25.8,0.5,Yes,Normal,Efficient
+11-01-2024 23:00,201.2,228.5,24.4,0.44,No,Required,Efficient
+12-01-2024 00:00,142.6,,26.9,0.36,No,Normal,Efficient
+12-01-2024 01:00,163.1,231.6,40.7,0.94,No,Normal,Inefficient
+12-01-2024 02:00,270.8,234.2,39.4,0.4,No,Required,Efficient
+12-01-2024 03:00,302.2,232.7,34,0.85,No,Scheduled,Inefficient
+12-01-2024 04:00,208.2,226.8,30.5,0.7,No,Scheduled,Moderate
+12-01-2024 05:00,290.6,241.3,29.8,0.27,No,Normal,Very Efficient
+12-01-2024 06:00,128.3,239.5,28.5,0.71,No,Scheduled,Moderate
+12-01-2024 07:00,155.2,231.1,27,0.85,No,Normal,Inefficient
+12-01-2024 08:00,295.1,,35.1,0.88,No,Scheduled,Inefficient
+12-01-2024 09:00,164,225,32.1,0.86,No,Normal,Inefficient
+12-01-2024 10:00,267.5,241.6,27,0.2,No,Normal,Very Efficient
+12-01-2024 11:00,227,238.8,39.2,0.76,No,Normal,Inefficient
+12-01-2024 12:00,308.4,238.8,26,0.65,No,Normal,Moderate
+12-01-2024 13:00,226,237.6,35.8,0.24,No,Normal,Very Efficient
+12-01-2024 14:00,122.2,236.7,40.1,0.86,No,Normal,Inefficient
+12-01-2024 15:00,269.1,240.3,33.3,0.89,No,Normal,Inefficient
+12-01-2024 16:00,322.3,,31.3,0.66,No,Normal,Moderate
+12-01-2024 17:00,338.8,228.3,40.7,0.4,No,Normal,Efficient
+12-01-2024 18:00,309.2,228,38.3,0.5,Yes,Normal,Efficient
+12-01-2024 19:00,121.6,230,36.2,0.9,Yes,Normal,Inefficient
+12-01-2024 20:00,193.1,231.5,31.1,0.83,Yes,Normal,Inefficient
+12-01-2024 21:00,213.4,240.7,29.4,0.32,Yes,Scheduled,Very Efficient
+12-01-2024 22:00,134,227.2,36.5,0.62,Yes,Normal,Moderate
+12-01-2024 23:00,181.4,231.3,37.8,0.44,No,Normal,Efficient
+13-01-2024 00:00,140.4,,36.1,0.3,No,Normal,Very Efficient
+13-01-2024 01:00,234.7,229.8,31.4,0.46,No,Scheduled,Efficient
+13-01-2024 02:00,323,230,26.4,0.93,No,Required,Inefficient
+13-01-2024 03:00,267.2,233.5,27.2,0.64,No,Normal,Moderate
+13-01-2024 04:00,173.3,227.2,33.9,0.23,No,Normal,Very Efficient
+13-01-2024 05:00,209.9,235.8,34.4,0.49,No,Normal,Efficient
+13-01-2024 06:00,160.2,235.5,40.5,0.9,No,Normal,Inefficient
+13-01-2024 07:00,313.2,235.2,28.2,0.78,No,Normal,Inefficient
+13-01-2024 08:00,274.3,,25,0.52,No,Normal,Efficient
+13-01-2024 09:00,167.3,240.3,25.7,0.94,No,Normal,Inefficient
+13-01-2024 10:00,160.5,235.6,32.1,0.55,No,Normal,Moderate
+13-01-2024 11:00,294.8,234.6,33.3,0.72,No,Normal,Moderate
+13-01-2024 12:00,147.7,232.3,33.4,0.22,No,Normal,Very Efficient
+13-01-2024 13:00,221.7,238.4,34.4,0.27,No,Scheduled,Very Efficient
+13-01-2024 14:00,247.7,225.7,27.4,0.95,No,Scheduled,Inefficient
+13-01-2024 15:00,171.6,237.9,29.8,0.85,No,Scheduled,Inefficient
+13-01-2024 16:00,223.6,,41.8,0.33,No,Scheduled,Very Efficient
+13-01-2024 17:00,244.6,230.7,37.4,0.91,No,Normal,Inefficient
+13-01-2024 18:00,185.1,240.4,37.3,0.74,Yes,Required,Moderate
+13-01-2024 19:00,185.6,234,29.8,0.32,Yes,Normal,Very Efficient
+13-01-2024 20:00,166.7,239.3,30.9,0.58,Yes,Normal,Moderate
+13-01-2024 21:00,301.6,233.4,28.6,0.35,Yes,Normal,Efficient
+13-01-2024 22:00,257.9,239.5,29.9,0.68,Yes,Normal,Moderate
+13-01-2024 23:00,177.4,235.2,32.8,0.36,No,Normal,Efficient
+14-01-2024 00:00,141.1,,24.3,0.78,No,Normal,Inefficient
+14-01-2024 01:00,162.7,225.5,34.6,0.39,No,Normal,Efficient
+14-01-2024 02:00,255.7,225.8,39.1,0.33,No,Required,Very Efficient
+14-01-2024 03:00,222.8,230,27.1,0.34,No,Normal,Very Efficient
+14-01-2024 04:00,324.5,241.1,40.7,0.87,No,Normal,Inefficient
+14-01-2024 05:00,232.5,236.9,31.7,0.89,No,Normal,Inefficient
+14-01-2024 06:00,283.3,240.7,24.8,0.59,No,Normal,Moderate
+14-01-2024 07:00,315.8,227.1,32.3,0.7,No,Normal,Moderate
+14-01-2024 08:00,151.6,,36.4,0.67,No,Normal,Moderate
+14-01-2024 09:00,276.6,236.4,41.4,0.66,No,Scheduled,Moderate
+14-01-2024 10:00,131.7,238.3,25.5,0.84,No,Normal,Inefficient
+14-01-2024 11:00,155.5,241.1,27.6,0.49,No,Normal,Efficient
+14-01-2024 12:00,293.1,226.4,35.3,0.83,No,Normal,Inefficient
+14-01-2024 13:00,246.4,226.4,29.5,0.32,No,Normal,Very Efficient
+14-01-2024 14:00,133.2,227.8,30.5,0.79,No,Normal,Inefficient
+14-01-2024 15:00,333.6,241.2,30.8,0.72,No,Normal,Moderate
+14-01-2024 16:00,214.6,,38.6,0.2,No,Normal,Very Efficient
+14-01-2024 17:00,280.1,226.1,29.6,0.47,No,Normal,Efficient
+14-01-2024 18:00,334.8,228.7,30.3,0.93,Yes,Normal,Inefficient
+14-01-2024 19:00,204.2,230.7,36,0.65,Yes,Normal,Moderate
+14-01-2024 20:00,218.9,233.2,26.7,0.53,Yes,Scheduled,Efficient
+14-01-2024 21:00,149.6,234.8,30.4,0.45,Yes,Normal,Efficient
+14-01-2024 22:00,262.3,240.1,33.2,0.45,Yes,Normal,Efficient
+14-01-2024 23:00,252,235.7,33.3,0.24,No,Normal,Very Efficient

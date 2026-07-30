@@ -1,0 +1,81 @@
+version: "3.9"
+
+# ── Energy Diagnostics — Full Stack ───────────────────────
+# Services: MongoDB + FastAPI backend + React frontend (dev)
+#
+# Usage:
+#   docker compose up --build
+#
+# Then open:
+#   Frontend  → http://localhost:5173
+#   API docs  → http://localhost:8000/docs
+#   MongoDB   → mongodb://localhost:27017
+
+services:
+
+  # ── 1. Redis Cache ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: energy_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ── 2. MongoDB ──────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: energy_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: energy_analytics
+
+  # ── 3. FastAPI backend ──────────────────────────────────
+  backend:
+    build:
+      context: ./backend   # FIX: was ./energy_diagnostics (dir did not exist)
+      dockerfile: Dockerfile
+    container_name: energy_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-secret-key}
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+    depends_on:
+      - redis
+      - mongo
+    volumes:
+      - ./backend:/app
+
+  # ── 4. React frontend (dev server) ──────────────────────
+  frontend:
+    build:
+      context: ./frontend   # FIX: was ./exactly-as-seen-main (dir did not exist)
+      dockerfile: Dockerfile
+    container_name: energy_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # FIX: Browser fetches this URL, so it must be localhost (not container name)
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  redis_data:
+  mongo_data:

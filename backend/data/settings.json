@@ -1,0 +1,10 @@
+{
+  "alert_consumption_threshold": 500,
+  "alert_anomaly_score_threshold": 0.7,
+  "alert_voltage_deviation": 10,
+  "alert_load_factor_threshold": 0.9,
+  "alert_email_recipients": [
+    "amarkambar254@gmail.com"
+  ],
+  "smtp_enabled": true
+}
