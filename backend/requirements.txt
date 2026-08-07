@@ -1,9 +1,5 @@
-# requirements.txt — Vercel serverless (Python 3.12 compatible)
-# Packages removed to fix build errors:
-#   shap     → pulls llvmlite which only supports Python <3.10 (INCOMPATIBLE)
-#   pyarrow  → 47MB, replaced by in-memory pandas only
-#   prophet, optuna, statsmodels, plotly, matplotlib, seaborn, reportlab,
-#   redis, watchdog, openpyxl → too heavy for 250MB limit
+# requirements.txt — Full dependencies for local dev and Render deployment
+# For Vercel frontend-only deploy, this file is NOT used.
 
 # ── Core API ──────────────────────────────────────────────────────────────────
 fastapi>=0.111.0
@@ -22,13 +18,26 @@ pandas>=2.1.0
 numpy>=1.24.3
 scikit-learn>=1.3.0
 xgboost>=2.0.0
+shap>=0.44.0
 scipy>=1.11.2
-fastparquet>=2024.2.0
+pyarrow>=13.0.0
+statsmodels>=0.14.0
+optuna>=3.4.0
+
+# ── Visualization / Reporting ─────────────────────────────────────────────────
+matplotlib>=3.7.2
+seaborn>=0.12.2
+plotly>=5.17.0
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
 requests>=2.31.0
+schedule>=1.2.0
 
 # ── Security ──────────────────────────────────────────────────────────────────
 passlib[bcrypt]>=1.7.4
 bcrypt==4.0.1
+
+# ── Excel Sync Engine ─────────────────────────────────────────────────────────
+watchdog>=4.0.0
+openpyxl>=3.1.2
