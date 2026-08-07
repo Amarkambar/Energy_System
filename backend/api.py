@@ -245,6 +245,41 @@ async def _lifespan(app: FastAPI):
     if loaded:
         _pipeline_cache.update(loaded)
         print("  ✅ Pipeline cache restored from disk")
+    else:
+        # ── AUTO-RUN: on Render/production fresh deploy there is no cache.
+        # Run the synthetic pipeline in a background thread so metrics are
+        # available immediately without the user having to click 'Run Pipeline'.
+        print("  🔄 No cache found — auto-running synthetic pipeline in background...")
+        def _auto_run():
+            global _pipeline_training, _pipeline_cache
+            _pipeline_training = True
+            try:
+                from data.pipeline import run_pipeline
+                from models.ml_models import train_all_models, run_all_predictions
+                from alerts.alerts_engine import AlertEngine, RecommendationEngine
+                df = run_pipeline()
+                models = train_all_models(df)
+                predictions, forecast = run_all_predictions(df, models)
+                alert_engine = AlertEngine()
+                alerts_df = alert_engine.check_dataframe(predictions.tail(500))
+                alert_summary = alert_engine.get_alert_summary()
+                rec_engine = RecommendationEngine()
+                recs = rec_engine.generate(df, predictions)
+                new_cache = {
+                    "ready": True,
+                    "df": df, "predictions": predictions, "forecast": forecast,
+                    "alerts_df": alerts_df, "alert_summary": alert_summary,
+                    "recs": recs, "models": models,
+                }
+                _pipeline_cache.update(new_cache)
+                _save_pipeline_to_disk(new_cache)
+                print("  ✅ Auto-run pipeline complete")
+            except Exception as e:
+                print(f"  ⚠️  Auto-run pipeline failed: {e}")
+            finally:
+                _pipeline_training = False
+        import threading as _threading
+        _threading.Thread(target=_auto_run, daemon=True).start()
 
     if _SYNC_AVAILABLE and ExcelSyncEngine is not None:
         try:
@@ -279,13 +314,16 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+# ── CORS: allow all origins in production (Vercel generates unique preview URLs)
+# Set CORS_ORIGINS=* for open API or list specific origins for tighter security.
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+_allow_all_origins = "*" in _cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://localhost:3000,http://localhost:8080"
-    ).split(","),
-    allow_credentials=True,
+    allow_origins=["*"] if _allow_all_origins else _cors_origins,
+    allow_credentials=not _allow_all_origins,  # credentials=True incompatible with allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
