@@ -18,15 +18,15 @@ An AI-powered industrial energy monitoring and diagnostics platform built with *
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.10, FastAPI, Uvicorn, Mangum |
+| Backend | Python 3.10, FastAPI, Uvicorn |
 | ML | XGBoost, Scikit-learn, SHAP, Isolation Forest |
-| Database | MongoDB Atlas |
+| Database | MongoDB |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Charts | Recharts |
 | Auth | JWT (HMAC-SHA256), passlib[bcrypt] |
-| Deployment | Vercel (frontend + backend) |
+| Deployment | Docker Compose |
 
-## Quick Start (Local)
+## Quick Start
 
 ### 1. Backend
 ```bash
@@ -45,34 +45,12 @@ npm install
 npm run dev
 ```
 
+### 3. Docker (full stack)
+```bash
+docker compose up --build
+```
+
 Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-## Deploy to Vercel
-
-### Backend
-1. **New Project** → import this repo → **Root Directory**: `backend`
-2. **Framework Preset**: Other
-3. Add **Environment Variables**:
-
-| Key | Value |
-|---|---|
-| `CORS_ORIGINS` | `*` |
-| `MONGO_URI` | your MongoDB Atlas URI |
-| `JWT_SECRET` | any long random string |
-| `PYTHONIOENCODING` | `utf-8` |
-
-4. Deploy → copy the backend URL
-
-### Frontend
-1. **New Project** → same repo → **Root Directory**: `frontend`
-2. **Framework Preset**: Vite
-3. Add **Environment Variable**:
-
-| Key | Value |
-|---|---|
-| `VITE_API_URL` | your backend Vercel URL |
-
-4. Deploy ✅
 
 ## Environment Variables
 
@@ -85,8 +63,7 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your@gmail.com
 SMTP_PASSWORD=your-app-password
-CORS_ORIGINS=*
-WEATHER_API_KEY=           # optional
+WEATHER_API_KEY=           # optional — OpenWeatherMap key
 FRONTEND_URL=http://localhost:5173
 ```
 
@@ -95,29 +72,25 @@ FRONTEND_URL=http://localhost:5173
 ## Project Structure
 
 ```
-Energy_System/
+project1/
 ├── backend/
-│   ├── api.py                   # FastAPI routes, auth, pipeline, metrics
-│   ├── api_vercel/
-│   │   └── index.py             # Mangum serverless entry point for Vercel
-│   ├── vercel.json              # Backend Vercel config
-│   ├── config.py                # Central configuration
+│   ├── api.py              # FastAPI routes, auth, pipeline, metrics
+│   ├── config.py           # Central configuration
 │   ├── data/
-│   │   ├── pipeline.py          # Ingestion → features → preprocessing
-│   │   └── excel_sync.py        # Live file watcher
+│   │   ├── pipeline.py     # Ingestion → features → preprocessing
+│   │   └── excel_sync.py   # Live file watcher
 │   ├── models/
-│   │   └── ml_models.py         # Anomaly, Forecast, Maintenance, Efficiency
+│   │   └── ml_models.py    # Anomaly, Forecast, Maintenance, Efficiency
 │   ├── alerts/
 │   │   └── alerts_engine.py
-│   ├── requirements.txt         # Full local deps
-│   └── requirements-vercel.txt  # Slim deps for Vercel (≤250 MB)
+│   └── requirements.txt
 ├── frontend/
-│   ├── vercel.json              # SPA routing for Vercel
 │   └── src/
-│       ├── pages/               # Login, Register, Reset, Dashboard
+│       ├── pages/          # Login, Register, Reset, Dashboard
 │       ├── components/dashboard/
 │       ├── hooks/use-ml-data.ts
 │       └── lib/api.ts
+├── docker-compose.yml
 └── README.md
 ```
 
