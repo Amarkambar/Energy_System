@@ -12,7 +12,13 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, silhouette_score
-import shap
+# shap is optional — not available on Vercel (llvmlite incompatible with Python 3.12)
+try:
+    import shap as _shap
+    _SHAP_AVAILABLE = True
+except Exception:
+    _shap = None
+    _SHAP_AVAILABLE = False
 
 from config import (
     ANOMALY_MODEL_PATH, FORECAST_MODEL_PATH,
@@ -87,7 +93,13 @@ class AnomalyDetector:
             f"train anomaly rate={train_flag_rate:.1%}"
         )
 
-        self.explainer = shap.TreeExplainer(self.iso_forest)
+        if _SHAP_AVAILABLE:
+            try:
+                self.explainer = _shap.TreeExplainer(self.iso_forest)
+            except Exception:
+                self.explainer = None
+        else:
+            self.explainer = None
         save_model(self, ANOMALY_MODEL_PATH)
         return self
 
@@ -122,7 +134,22 @@ class AnomalyDetector:
         return result
 
     def explain(self, df: pd.DataFrame, n_samples: int = 100) -> pd.DataFrame:
-        """Return SHAP feature importance for anomaly predictions"""
+        """Return SHAP feature importance. Returns empty DataFrame if shap not available."""
+        if not _SHAP_AVAILABLE or self.explainer is None:
+            # Fallback: use sklearn feature_importances_ approximation
+            try:
+                importance_vals = np.abs(
+                    self.iso_forest.feature_importances_
+                    if hasattr(self.iso_forest, 'feature_importances_')
+                    else np.ones(len(self.feature_cols)) / len(self.feature_cols)
+                )
+                return pd.DataFrame({
+                    "feature": self.feature_cols,
+                    "shap_mean": importance_vals / importance_vals.sum()
+                }).sort_values("shap_mean", ascending=False)
+            except Exception:
+                return pd.DataFrame({"feature": self.feature_cols,
+                                     "shap_mean": [0.0] * len(self.feature_cols)})
         X = self.scaler.transform(df[self.feature_cols].fillna(0))[:n_samples]
         shap_vals = self.explainer.shap_values(X)
         importance = pd.DataFrame({

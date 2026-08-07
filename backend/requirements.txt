@@ -1,8 +1,9 @@
-# requirements.txt — slim for Vercel serverless deployment
-# Heavy packages (prophet, optuna, statsmodels, plotly, matplotlib,
-# seaborn, reportlab, redis, watchdog, openpyxl) removed to stay
-# under Vercel's 250 MB compressed function size limit.
-# Full dev dependencies → see requirements-full.txt
+# requirements.txt — Vercel serverless (Python 3.12 compatible)
+# Packages removed to fix build errors:
+#   shap     → pulls llvmlite which only supports Python <3.10 (INCOMPATIBLE)
+#   pyarrow  → 47MB, replaced by in-memory pandas only
+#   prophet, optuna, statsmodels, plotly, matplotlib, seaborn, reportlab,
+#   redis, watchdog, openpyxl → too heavy for 250MB limit
 
 # ── Core API ──────────────────────────────────────────────────────────────────
 fastapi>=0.111.0
@@ -20,10 +21,9 @@ pymongo>=4.6.0
 pandas>=2.1.0
 numpy>=1.24.3
 scikit-learn>=1.3.0
-xgboost>=1.7.6
-shap>=0.42.1
+xgboost>=2.0.0
 scipy>=1.11.2
-pyarrow>=13.0.0
+fastparquet>=2024.2.0
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0
