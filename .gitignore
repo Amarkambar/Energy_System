@@ -49,13 +49,17 @@ backend/models/saved/
 *.log
 backend/server_out.log
 
-# Environment files
+# Environment files — block real secrets
 .env
-.env.*
 backend/.env
-backend/.env.*
 frontend/.env
-frontend/.env.*
+frontend/.env.production
+frontend/.env.local
+backend/.env.local
+# Allow example templates
+!.env.example
+!**/.env.example
+!**/.env.production.example
 
 # Jupyter notebooks (dev scratch files)
 *.ipynb

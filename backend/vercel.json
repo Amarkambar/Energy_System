@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api_vercel/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.10",
+        "maxLambdaSize": "50mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api_vercel/index.py"
+    }
+  ],
+  "env": {
+    "CORS_ORIGINS": "*",
+    "PYTHONIOENCODING": "utf-8"
+  }
+}
