@@ -333,9 +333,40 @@ async def no_cache_middleware(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+        response.headers["Pragma"]         = "no-cache"
+        response.headers["Expires"]        = "0"
+        # ── Security headers (fixes OWASP A05 / Bandit warnings) ────────────
+        response.headers["X-Content-Type-Options"]  = "nosniff"
+        response.headers["X-Frame-Options"]         = "DENY"
+        response.headers["X-XSS-Protection"]        = "1; mode=block"
+        response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=(), camera=()"
+        # HSTS only on HTTPS (Render/Vercel enforce HTTPS in prod)
+        if request.headers.get("x-forwarded-proto") == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+# ── In-memory rate limiter for auth endpoints ──────────────────────────────
+import collections as _col, threading as _rlt
+_rate_store: dict = _col.defaultdict(list)   # ip -> [timestamps]
+_rate_lock  = _rlt.Lock()
+_RATE_LIMIT  = int(os.getenv("AUTH_RATE_LIMIT",  "10"))   # max requests
+_RATE_WINDOW = int(os.getenv("AUTH_RATE_WINDOW", "60"))   # per N seconds
+
+def _check_rate_limit(request: Request):
+    """Raises 429 if caller IP exceeded AUTH_RATE_LIMIT reqs in AUTH_RATE_WINDOW seconds."""
+    ip = (request.client.host if request.client else "unknown")
+    now = time.time()
+    with _rate_lock:
+        _rate_store[ip] = [t for t in _rate_store[ip] if now - t < _RATE_WINDOW]
+        if len(_rate_store[ip]) >= _RATE_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many requests. Limit: {_RATE_LIMIT} per {_RATE_WINDOW}s.",
+                headers={"Retry-After": str(_RATE_WINDOW)},
+            )
+        _rate_store[ip].append(now)
+
 
 security = HTTPBearer(auto_error=False)
 
@@ -364,7 +395,8 @@ class ResetPasswordRequest(BaseModel):
 
 # ── Auth routes ────────────────────────────────────────────────────────────────
 @app.post("/api/auth/register")
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, request: Request):
+    _check_rate_limit(request)   # rate-limit: 10 reg attempts / 60s per IP
     if len(req.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
     try:
@@ -380,7 +412,8 @@ def register(req: RegisterRequest):
     return {"token": token, "user": {"email": req.email.lower(), "name": req.name.strip()}}
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    _check_rate_limit(request)   # rate-limit: 10 login attempts / 60s per IP
     user = users_col.find_one({"email": req.email.lower()})
     # FIX: use verify_password() which supports both bcrypt and legacy SHA-256
     if not user or not verify_password(req.password, user["password_hash"]):
@@ -392,6 +425,7 @@ def login(req: LoginRequest):
             {"$set": {"password_hash": hash_password(req.password)}}
         )
         logger.info(f"[Auth] Upgraded password hash to bcrypt for {user['email']}")
+
     token = create_token(user["email"], user["name"])
     return {"token": token, "user": {"email": user["email"], "name": user["name"]}}
 
