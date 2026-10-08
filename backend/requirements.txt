@@ -2,7 +2,7 @@
 # For Vercel frontend-only deploy, this file is NOT used.
 
 # ── Core API ──────────────────────────────────────────────────────────────────
-fastapi>=0.111.0
+fastapi>=0.142.2
 uvicorn>=0.29.0
 mangum>=0.17.0
 pydantic[email]>=2.6.0
