@@ -4,7 +4,7 @@
 # Vercel's 250 MB compressed function size limit.
 
 # ── Core API ──────────────────────────────────────────────────────────────────
-fastapi>=0.111.0
+fastapi>=0.142.2
 uvicorn>=0.29.0
 mangum>=0.17.0
 pydantic[email]>=2.6.0
