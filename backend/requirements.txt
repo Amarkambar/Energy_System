@@ -22,7 +22,7 @@ shap>=0.44.0
 scipy>=1.11.2
 pyarrow>=13.0.0
 statsmodels>=0.14.0
-optuna>=3.4.0
+optuna>=5.0.0
 
 # ── Visualization / Reporting ─────────────────────────────────────────────────
 matplotlib>=3.7.2
