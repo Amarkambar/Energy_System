@@ -281,24 +281,16 @@ app.add_middleware(
 )
 
 
-# ── Serve React frontend as static files (desktop / Windows installer mode) ───
+# ── Static assets only (SPA fallback route added at bottom of file) ─────────
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 if os.path.isdir(_STATIC_DIR):
     from fastapi.staticfiles import StaticFiles as _StaticFiles
-    from fastapi.responses import FileResponse as _FileResponse
     _assets = os.path.join(_STATIC_DIR, "assets")
     if os.path.isdir(_assets):
         app.mount("/assets", _StaticFiles(directory=_assets), name="assets")
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def _spa_fallback(full_path: str = ""):
-        if full_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="Not found")
-        fp = os.path.join(_STATIC_DIR, full_path)
-        if full_path and os.path.isfile(fp):
-            from fastapi.responses import FileResponse as _FR
-            return _FR(fp)
-        from fastapi.responses import FileResponse as _FR
-        return _FR(os.path.join(_STATIC_DIR, "index.html"))
+# NOTE: SPA /{full_path:path} fallback is registered at the very END of this
+# file so it never shadows /api/* routes. See bottom of file.
+
 
 @app.middleware("http")
 async def no_cache_middleware(request: Request, call_next):
@@ -1395,7 +1387,23 @@ def get_feature_importance():
 # The @app.on_event("shutdown") decorator was removed as it is deprecated in FastAPI 0.95+.
 
 
+
 if __name__ == "__main__":
     import uvicorn
     # Local runs bind to loopback; deployments can set API_HOST explicitly.
     uvicorn.run("api:app", host=os.getenv("API_HOST", "127.0.0.1"), port=8000, reload=False)
+
+
+# ── SPA fallback (MUST be last — registered after ALL /api/* routes) ─────────
+# Serves the built React frontend for any non-API, non-asset URL.
+# Only active when backend/static/index.html exists (installer / desktop mode).
+if os.path.isdir(_STATIC_DIR) and os.path.isfile(os.path.join(_STATIC_DIR, "index.html")):
+    from fastapi.responses import FileResponse as _FileResponse
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _spa_fallback(full_path: str = ""):
+        # Let actual /api/* 404s propagate naturally — never catch them here
+        fp = os.path.join(_STATIC_DIR, full_path)
+        if full_path and os.path.isfile(fp):
+            return _FileResponse(fp)
+        return _FileResponse(os.path.join(_STATIC_DIR, "index.html"))
