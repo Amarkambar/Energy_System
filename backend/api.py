@@ -280,6 +280,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ── Serve React frontend as static files (desktop / Windows installer mode) ───
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.isdir(_STATIC_DIR):
+    from fastapi.staticfiles import StaticFiles as _StaticFiles
+    from fastapi.responses import FileResponse as _FileResponse
+    _assets = os.path.join(_STATIC_DIR, "assets")
+    if os.path.isdir(_assets):
+        app.mount("/assets", _StaticFiles(directory=_assets), name="assets")
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _spa_fallback(full_path: str = ""):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        fp = os.path.join(_STATIC_DIR, full_path)
+        if full_path and os.path.isfile(fp):
+            from fastapi.responses import FileResponse as _FR
+            return _FR(fp)
+        from fastapi.responses import FileResponse as _FR
+        return _FR(os.path.join(_STATIC_DIR, "index.html"))
+
 @app.middleware("http")
 async def no_cache_middleware(request: Request, call_next):
     response = await call_next(request)

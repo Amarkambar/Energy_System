@@ -1,0 +1,1 @@
+import{a as e,i as t,l as n,o as r}from"./EmptyChartState-Bk_6nXmR.js";import{t as i}from"./Area-CbcSHxDy.js";var a=t({chartName:`AreaChart`,GraphicalChild:i,axisComponents:[{axisType:`xAxis`,AxisComp:r},{axisType:`yAxis`,AxisComp:e}],formatAxisMap:n});export{a as t};
