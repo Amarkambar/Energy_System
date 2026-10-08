@@ -126,7 +126,7 @@ const AnalyticsToolbar = () => {
 
         {/* Right: Upload + Auto Refresh */}
         <div className="flex items-center gap-4">
-          <input ref={inputRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
+          <input id="analytics-csv-upload" name="dataset-file" ref={inputRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
           <button
             onClick={() => inputRef.current?.click()}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-[12px] font-head font-semibold text-foreground hover:bg-card hover:border-border2 transition-all cursor-pointer"

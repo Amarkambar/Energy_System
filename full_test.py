@@ -286,8 +286,10 @@ print(f"  ❌ FAIL:    {results['fail']}")
 print(f"  ⚠️  WARN:    {results['warn']}")
 score = int(100 * results["pass"] / total) if total else 0
 print(f"\n  SECURITY SCORE: {score}/100")
-if results["fail"] == 0:
-    print("  ✅ No critical failures — project is production-ready")
+if results["fail"] == 0 and results["warn"] == 0:
+    print("  ✅ No failures or warnings — no issues found by this audit")
+elif results["fail"] == 0:
+    print(f"  ⚠️  No critical failures, but {results['warn']} warning(s) need review — production readiness is not established")
 else:
     print(f"  ❌ {results['fail']} critical issue(s) must be fixed before production")
 print("="*60 + "\n")

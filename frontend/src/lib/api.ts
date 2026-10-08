@@ -12,7 +12,7 @@ async function request<T>(
 ): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(typeof FormData === "undefined" || !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
     ...(options.headers as Record<string, string>),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -33,7 +33,11 @@ async function request<T>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(err.detail || "Request failed");
+    const detail = err.detail;
+    const message = typeof detail === "string" ? detail : detail?.message
+      ? `${detail.message}${Array.isArray(detail.errors) ? `: ${detail.errors.join("; ")}` : ""}`
+      : "Request failed";
+    throw new Error(message);
   }
   return res.json();
 }

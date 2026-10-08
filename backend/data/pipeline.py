@@ -89,8 +89,11 @@ def generate_synthetic_data(n_hours: int = 8760) -> pd.DataFrame:
     )
 
     # Inject anomalies (spikes)
-    anomaly_idx = np.random.choice(n_hours, size=50, replace=False)
-    consumption[anomaly_idx] += np.random.uniform(100, 300, 50)
+    # Scale the anomaly count with the sample size so short demo/test ranges
+    # remain valid and retain roughly the same anomaly rate as a full year.
+    anomaly_count = min(n_hours, max(1, round(n_hours * 50 / 8760)))
+    anomaly_idx = np.random.choice(n_hours, size=anomaly_count, replace=False)
+    consumption[anomaly_idx] += np.random.uniform(100, 300, anomaly_count)
     consumption = np.clip(consumption, 0, None)
 
     df = pd.DataFrame({
@@ -310,6 +313,25 @@ def _log_dtypes(df: pd.DataFrame, stage: str = "") -> None:
 def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     """Run full feature engineering pipeline"""
 
+    if df is None or df.empty:
+        raise ValueError("Cannot build features: the input dataset has no rows.")
+    required = {"timestamp", "consumption_kwh"}
+    missing = sorted(required.difference(df.columns))
+    if missing:
+        raise ValueError(
+            "Cannot build features: required column(s) missing: " + ", ".join(missing)
+        )
+
+    df = df.copy()
+    df["consumption_kwh"] = pd.to_numeric(df["consumption_kwh"], errors="coerce")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df = df.dropna(subset=["timestamp", "consumption_kwh"])
+    if df.empty:
+        raise ValueError(
+            "Cannot build features: no rows have both a valid timestamp and consumption reading."
+        )
+    df = df.sort_values("timestamp").reset_index(drop=True)
+
     # FIX: Requirement 5 — log dtypes before any feature step
     _log_dtypes(df, stage="before feature engineering")
 
@@ -318,7 +340,32 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     df = add_rolling_features(df)
     df = add_fft_features(df)
     df = add_consumption_ratios(df)
-    df = df.dropna().reset_index(drop=True)
+
+    # Real uploads and synthetic padding can have different optional columns.
+    # A blanket dropna() removes every row when each source contributes
+    # different columns (for example, is_peak_hour vs humidity). Preserve the
+    # required readings, replace infinities, and impute optional model inputs.
+    df = df.replace([np.inf, -np.inf], np.nan)
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        if not df[col].isna().any():
+            continue
+        if "_lag_" in col or "_roll_" in col:
+            # Initial time windows have no historical value; zero represents
+            # that missing history without deleting otherwise valid samples.
+            df[col] = df[col].fillna(0)
+        else:
+            median = df[col].median()
+            df[col] = df[col].fillna(median if pd.notna(median) else 0)
+
+    object_cols = df.select_dtypes(include=["object", "string"]).columns
+    if len(object_cols):
+        df[object_cols] = df[object_cols].fillna("unknown")
+
+    # Recheck the training target after feature creation and imputation.
+    df = df.dropna(subset=["timestamp", "consumption_kwh"]).reset_index(drop=True)
+    if df.empty:
+        raise ValueError("Feature engineering produced no trainable rows.")
 
     _log_dtypes(df, stage="after feature engineering")
     print(f"[Features] Final matrix: {df.shape[0]} rows × {df.shape[1]} columns")

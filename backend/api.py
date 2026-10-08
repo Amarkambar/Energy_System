@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 import hashlib
@@ -28,7 +28,8 @@ import time
 import json
 import base64
 import threading
-import pickle
+import joblib         # pickle-based serialization; load only trusted cache files
+
 import secrets
 import smtplib
 from email.mime.text import MIMEText
@@ -38,6 +39,8 @@ from dotenv import load_dotenv
 import logging
 import shutil
 import pathlib
+from urllib.parse import urlencode
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 # FIX: Use bcrypt for secure password hashing (replaces plain SHA-256)
@@ -52,17 +55,6 @@ except ImportError:
     logger_import.warning("[Security] passlib not installed — falling back to SHA-256. Run: pip install passlib[bcrypt]")
 
 logger = logging.getLogger(__name__)
-
-# ── Live Excel Sync Engine ─────────────────────────────────────────────────────
-try:
-    from data.excel_sync import ExcelSyncEngine
-    _SYNC_AVAILABLE = True
-except ImportError:
-    ExcelSyncEngine = None
-    _SYNC_AVAILABLE = False
-    logger.warning("[Sync] data.excel_sync not importable — install watchdog+openpyxl")
-
-_sync_engine = None
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -117,6 +109,7 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
 db = client["energy_analytics"]
 users_col = db["users"]
+reset_tokens_col = db["password_reset_tokens"]
 _mongo_ready = False
 
 # ── Disk cache paths ───────────────────────────────────────────────────────────
@@ -157,11 +150,19 @@ def _save_settings(data: dict):
     with open(_SETTINGS_PATH, "w") as f:
         json.dump(merged, f, indent=2)
 
-# ── Password reset token store ─────────────────────────────────────────────────
-_reset_tokens: dict = {}
-
 # ── JWT-like token ─────────────────────────────────────────────────────────────
-SECRET = os.getenv("JWT_SECRET", "change-me-in-production-secret-key")
+SECRET = os.getenv("JWT_SECRET", "").strip()
+_PRODUCTION = os.getenv("APP_ENV", "development").strip().lower() == "production"
+_WEAK_SECRET_VALUES = {
+    "change-me-in-production-secret-key",
+    "change-me-to-a-long-random-string",
+    "development-only-insecure-secret-do-not-deploy",
+}
+if _PRODUCTION and (len(SECRET) < 32 or SECRET in _WEAK_SECRET_VALUES or SECRET.lower().startswith(("change-me", "your-"))):
+    raise RuntimeError("Production requires a strong JWT_SECRET of at least 32 characters")
+if not SECRET:
+    SECRET = "development-only-insecure-secret-do-not-deploy"
+    logger.warning("[Security] Using development JWT secret; set JWT_SECRET before deployment")
 
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -187,11 +188,10 @@ def verify_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 def hash_password(password: str) -> str:
-    """Hash password with bcrypt (preferred) or SHA-256 fallback."""
+    """Hash new passwords with bcrypt; fail closed if the dependency is unavailable."""
     if _BCRYPT_AVAILABLE:
         return _pwd_context.hash(password)
-    # Fallback if passlib not installed
-    return hashlib.sha256(password.encode()).hexdigest()
+    raise RuntimeError("Secure password hashing is unavailable; install passlib[bcrypt]")
 
 def verify_password(plain: str, hashed: str) -> bool:
     """
@@ -208,7 +208,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Startup and shutdown logic using the modern FastAPI lifespan API."""
-    global _mongo_ready, _sync_engine
+    global _mongo_ready
 
     # ── STARTUP ────────────────────────────────────────────────────────────────
     print("")
@@ -224,12 +224,13 @@ async def _lifespan(app: FastAPI):
     if _BCRYPT_AVAILABLE:
         print("  ✅ bcrypt password hashing enabled")
     else:
-        print("  ⚠️  passlib not installed — using SHA-256 fallback. Run: pip install passlib[bcrypt]")
+        print("  ❌ passlib not installed — password registration is disabled. Install passlib[bcrypt].")
 
     try:
         users_col.create_index("email", unique=True)
         _mongo_ready = True
         print("  ✅ MongoDB connected and index ensured.")
+        reset_tokens_col.create_index("expires_at", expireAfterSeconds=0)
     except Exception as e:
         print(f"  ⚠️  MongoDB not reachable: {e}")
         logger.warning(f"[Startup] MongoDB not reachable: {e}")
@@ -246,64 +247,12 @@ async def _lifespan(app: FastAPI):
         _pipeline_cache.update(loaded)
         print("  ✅ Pipeline cache restored from disk")
     else:
-        # ── AUTO-RUN: on Render/production fresh deploy there is no cache.
-        # Run the synthetic pipeline in a background thread so metrics are
-        # available immediately without the user having to click 'Run Pipeline'.
-        print("  🔄 No cache found — auto-running synthetic pipeline in background...")
-        def _auto_run():
-            global _pipeline_training, _pipeline_cache
-            _pipeline_training = True
-            try:
-                from data.pipeline import run_pipeline
-                from models.ml_models import train_all_models, run_all_predictions
-                from alerts.alerts_engine import AlertEngine, RecommendationEngine
-                df = run_pipeline()
-                models = train_all_models(df)
-                predictions, forecast = run_all_predictions(df, models)
-                alert_engine = AlertEngine()
-                alerts_df = alert_engine.check_dataframe(predictions.tail(500))
-                alert_summary = alert_engine.get_alert_summary()
-                rec_engine = RecommendationEngine()
-                recs = rec_engine.generate(df, predictions)
-                new_cache = {
-                    "ready": True,
-                    "df": df, "predictions": predictions, "forecast": forecast,
-                    "alerts_df": alerts_df, "alert_summary": alert_summary,
-                    "recs": recs, "models": models,
-                }
-                _pipeline_cache.update(new_cache)
-                _save_pipeline_to_disk(new_cache)
-                print("  ✅ Auto-run pipeline complete")
-            except Exception as e:
-                print(f"  ⚠️  Auto-run pipeline failed: {e}")
-            finally:
-                _pipeline_training = False
-        import threading as _threading
-        _threading.Thread(target=_auto_run, daemon=True).start()
-
-    if _SYNC_AVAILABLE and ExcelSyncEngine is not None:
-        try:
-            _sync_engine = ExcelSyncEngine(
-                pipeline_cache=_pipeline_cache,
-                save_cache_fn=_save_pipeline_to_disk,
-            )
-            _sync_engine.start()
-            print("  ✅ Live Excel Sync Engine started")
-        except Exception as exc:
-            print(f"  ⚠️  Excel Sync Engine failed to start: {exc}")
-            _sync_engine = None
-    else:
-        print("  ⚠️  Excel Sync Engine not available — install watchdog>=4.0.0 and openpyxl>=3.1.2")
+        print("  ℹ️  No uploaded CSV — waiting for a data source.")
 
     print("══════════════════════════════════════════════════════════")
     print("")
 
     yield  # ── application runs here ──────────────────────────────────────────
-
-    # ── SHUTDOWN ───────────────────────────────────────────────────────────────
-    if _sync_engine is not None:
-        logger.info("[Shutdown] Stopping Excel Sync Engine…")
-        _sync_engine.stop()
 
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
@@ -314,11 +263,14 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
-# ── CORS: allow all origins in production (Vercel generates unique preview URLs)
-# Set CORS_ORIGINS=* for open API or list specific origins for tighter security.
-_cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+# ── CORS: configure explicit origins in production.
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "")
+if not _cors_origins_raw.strip():
+    _cors_origins_raw = "http://localhost:5173,http://localhost:3000"
 _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
 _allow_all_origins = "*" in _cors_origins
+if _PRODUCTION and (not _cors_origins or _allow_all_origins):
+    raise RuntimeError("Production requires CORS_ORIGINS with explicit trusted frontend origins; wildcards are forbidden")
 
 app.add_middleware(
     CORSMiddleware,
@@ -393,6 +345,14 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
     token: str  # FIX: token is now required to prevent unauthenticated password resets
 
+class ThresholdSettings(BaseModel):
+    alert_consumption_threshold: float = Field(default=500, gt=0, le=1_000_000)
+    alert_anomaly_score_threshold: float = Field(default=0.7, ge=0, le=1)
+    alert_voltage_deviation: float = Field(default=10, gt=0, le=230)
+    alert_load_factor_threshold: float = Field(default=0.9, ge=0, le=1)
+    alert_email_recipients: list[EmailStr] = Field(default_factory=list, max_length=50)
+    smtp_enabled: bool = False
+
 # ── Auth routes ────────────────────────────────────────────────────────────────
 @app.post("/api/auth/register")
 def register(req: RegisterRequest, request: Request):
@@ -430,24 +390,25 @@ def login(req: LoginRequest, request: Request):
     return {"token": token, "user": {"email": user["email"], "name": user["name"]}}
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest):
+def forgot_password(req: ForgotPasswordRequest, request: Request):
+    _check_rate_limit(request)
     user = users_col.find_one({"email": req.email.lower()})
-    if not user:
-        raise HTTPException(404, "No account found with this email")
-
-    token = secrets.token_urlsafe(32)
-    _reset_tokens[token] = {"email": req.email.lower(), "exp": time.time() + 900}
-
     smtp_user = os.getenv("SMTP_USER", "").strip()
     smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587").strip())
-    email_sent = False
-
-    if _SMTP_READY and smtp_user and smtp_pass and smtp_user != "your@gmail.com":
+    if user and _SMTP_READY and smtp_user and smtp_pass and smtp_user != "your@gmail.com":
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        reset_tokens_col.insert_one({
+            "token_hash": token_hash,
+            "email": req.email.lower(),
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=15),
+        })
         try:
             frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-            reset_link = f"{frontend_url}/reset-password?token={token}&email={req.email.lower()}"
+            reset_query = urlencode({"token": token, "email": req.email.lower()})
+            reset_link = f"{frontend_url.rstrip('/')}/reset-password?{reset_query}"
             msg = MIMEMultipart("alternative")
             msg["Subject"] = "[Energy Diagnostics] Password Reset Request"
             msg["From"]    = smtp_user
@@ -466,44 +427,48 @@ def forgot_password(req: ForgotPasswordRequest):
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(smtp_user, [req.email.lower()], msg.as_string())
-            email_sent = True
         except Exception as e:
             logger.warning(f"SMTP send failed: {e}")
+            reset_tokens_col.delete_one({"token_hash": token_hash})
 
     return {
-        "message": "Reset link sent to your email" if email_sent
-                   else "Reset link generated (configure SMTP to send real emails)",
-        "email": req.email.lower(),
-        "reset_token": token if not email_sent else None,
+        "message": "If an account exists for that email, a password reset link will be sent.",
     }
 
 @app.post("/api/auth/verify-reset-token")
-def verify_reset_token(token: str, email: str):
-    entry = _reset_tokens.get(token)
-    if not entry or entry["email"] != email.lower() or entry["exp"] < time.time():
+def verify_reset_token(token: str, email: str, request: Request):
+    _check_rate_limit(request)
+    entry = reset_tokens_col.find_one({
+        "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+        "email": email.lower(),
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+    if not entry:
         raise HTTPException(400, "Invalid or expired reset token")
     return {"valid": True}
 
 @app.post("/api/auth/reset-password")
-def reset_password(req: ResetPasswordRequest):
+def reset_password(req: ResetPasswordRequest, request: Request):
+    _check_rate_limit(request)
     # FIX: Validate reset token BEFORE updating the password.
     # Previously missing — anyone who knew an email could reset it without a token.
-    entry = _reset_tokens.get(req.token)
-    if not entry or entry["email"] != req.email.lower() or entry["exp"] < time.time():
-        raise HTTPException(400, "Invalid or expired reset token")
-
     if len(req.new_password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
+    entry = reset_tokens_col.find_one_and_delete({
+        "token_hash": hashlib.sha256(req.token.encode()).hexdigest(),
+        "email": req.email.lower(),
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+    if not entry:
+        raise HTTPException(400, "Invalid or expired reset token")
     result = users_col.update_one(
         {"email": req.email.lower()},
         {"$set": {"password_hash": hash_password(req.new_password)}}
     )
     if result.matched_count == 0:
         raise HTTPException(404, "Account not found")
-    # Invalidate ALL reset tokens for this email (one-time use)
-    expired = [t for t, v in _reset_tokens.items() if v["email"] == req.email.lower()]
-    for t in expired:
-        _reset_tokens.pop(t, None)
+    # Invalidate every outstanding reset link for this email after a password change.
+    reset_tokens_col.delete_many({"email": req.email.lower()})
     return {"message": "Password updated successfully"}
 
 @app.get("/api/auth/me")
@@ -512,12 +477,12 @@ def me(user=Depends(get_current_user)):
 
 # ── Settings routes ────────────────────────────────────────────────────────────
 @app.get("/api/settings/thresholds")
-def get_thresholds():
+def get_thresholds(user=Depends(get_current_user)):
     return _load_settings()
 
 @app.post("/api/settings/thresholds")
-def update_thresholds(data: dict):
-    _save_settings(data)
+def update_thresholds(data: ThresholdSettings, user=Depends(get_current_user)):
+    _save_settings(data.model_dump(mode="json"))
     return {"status": "success", "settings": _load_settings()}
 
 # ── Health check ───────────────────────────────────────────────────────────────
@@ -579,8 +544,8 @@ def _save_pipeline_to_disk(cache: dict):
         cache["forecast"].to_parquet(_CACHE_FC_PATH, index=False)
         if not cache.get("alerts_df", pd.DataFrame()).empty:
             cache["alerts_df"].to_parquet(_CACHE_ALERTS_PATH, index=False)
-        with open(_CACHE_MODELS_PATH, "wb") as f:
-            pickle.dump(cache["models"], f)
+        joblib.dump(cache["models"], _CACHE_MODELS_PATH)
+
         with open(_CACHE_RECS_PATH, "w") as f:
             json.dump(cache.get("recs", []), f)
         with open(_CACHE_ASUMMARY_PATH, "w") as f:
@@ -603,8 +568,8 @@ def _load_pipeline_from_disk() -> dict:
         preds     = pd.read_parquet(_CACHE_PRED_PATH)
         forecast  = pd.read_parquet(_CACHE_FC_PATH)
         alerts_df = pd.read_parquet(_CACHE_ALERTS_PATH) if os.path.exists(_CACHE_ALERTS_PATH) else pd.DataFrame()
-        with open(_CACHE_MODELS_PATH, "rb") as f:
-            models = pickle.load(f)
+        models = joblib.load(_CACHE_MODELS_PATH)
+
         with open(_CACHE_RECS_PATH) as f:
             recs = json.load(f)
         with open(_CACHE_ASUMMARY_PATH) as f:
@@ -623,7 +588,19 @@ def _load_pipeline_from_disk() -> dict:
 # ── In-memory pipeline state ───────────────────────────────────────────────────
 _pipeline_cache: dict    = {}
 _pipeline_training: bool = False
+_pipeline_error: str | None = None
 _uploaded_csv_path: str | None = None
+_uploaded_csv_name: str | None = None
+_active_data_source: str = "none"
+
+
+def _invalidate_pipeline_cache() -> None:
+    """Remove stale analytics when the selected source changes."""
+    _pipeline_cache.clear()
+    for cache_path in (_CACHE_META_PATH, _CACHE_DF_PATH, _CACHE_PRED_PATH,
+                       _CACHE_FC_PATH, _CACHE_ALERTS_PATH, _CACHE_RECS_PATH,
+                       _CACHE_ASUMMARY_PATH):
+        pathlib.Path(cache_path).unlink(missing_ok=True)
 
 
 def _get_pipeline_data() -> dict:
@@ -640,6 +617,10 @@ def _get_pipeline_data() -> dict:
                 "message": "Pipeline is currently training. Please wait and try again.",
             },
         )
+    if _active_data_source == "none":
+        raise HTTPException(503, detail={"status": "no_source", "message": "Upload a CSV file to view analytics."})
+    if _active_data_source == "csv" and not (_uploaded_csv_path and os.path.isfile(_uploaded_csv_path)):
+        raise HTTPException(503, detail={"status": "no_source", "message": "The active CSV is unavailable. Upload it again to continue."})
     if _pipeline_cache.get("ready"):
         return _pipeline_cache
     raise HTTPException(
@@ -672,9 +653,9 @@ def _safe_endpoint(fn):
 
 # ── CSV upload ─────────────────────────────────────────────────────────────────
 @app.post("/api/data/upload-csv")
-async def upload_csv(file: UploadFile = File(...)):
-    global _uploaded_csv_path
-    if not file.filename.endswith(".csv"):
+async def upload_csv(file: UploadFile = File(...), user=Depends(get_current_user)):
+    global _uploaded_csv_path, _uploaded_csv_name, _pipeline_error, _active_data_source
+    if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Only CSV files are allowed")
     if _pipeline_training:
         raise HTTPException(409, "Cannot upload a new CSV while the pipeline is training")
@@ -685,6 +666,9 @@ async def upload_csv(file: UploadFile = File(...)):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         _uploaded_csv_path = file_path
+        _uploaded_csv_name = pathlib.Path(file.filename or "uploaded_data.csv").name
+        _active_data_source = "csv"
+        _pipeline_error = None
         _pipeline_cache.clear()
         for p in [_CACHE_META_PATH, _CACHE_DF_PATH, _CACHE_PRED_PATH,
                   _CACHE_FC_PATH, _CACHE_ALERTS_PATH, _CACHE_RECS_PATH, _CACHE_ASUMMARY_PATH]:
@@ -697,11 +681,14 @@ async def upload_csv(file: UploadFile = File(...)):
 
 # ── Pipeline run ───────────────────────────────────────────────────────────────
 @app.post("/api/pipeline/run")
-def run_pipeline_endpoint():
-    global _pipeline_training, _pipeline_cache
+def run_pipeline_endpoint(user=Depends(get_current_user)):
+    global _pipeline_training, _pipeline_cache, _pipeline_error
 
     if _pipeline_training:
         raise HTTPException(409, "Pipeline is already running")
+
+    if _active_data_source == "none" and not (_uploaded_csv_path and os.path.exists(_uploaded_csv_path)):
+        raise HTTPException(409, "Upload a CSV file before running analytics.")
 
     # Pre-flight import check
     try:
@@ -713,15 +700,16 @@ def run_pipeline_endpoint():
 
     # FIX Bug 4: set _pipeline_training = True BEFORE launching the thread
     _pipeline_training = True
+    _pipeline_error = None
 
     def _run_in_background():
-        global _pipeline_training, _pipeline_cache
+        global _pipeline_training, _pipeline_cache, _pipeline_error
         try:
             from data.pipeline import run_pipeline
             from models.ml_models import train_all_models, run_all_predictions
             from alerts.alerts_engine import AlertEngine, RecommendationEngine
 
-            data_source = "synthetic"
+            data_source = _active_data_source
             if _uploaded_csv_path and os.path.exists(_uploaded_csv_path):
                 try:
                     from data.real_data_ingestion import RealDataIngestor
@@ -733,9 +721,10 @@ def run_pipeline_endpoint():
                     logger.warning(f"[Pipeline] Validation failed: {ve}")
                     data_source = "uploaded_csv_unvalidated"
 
-            df = (run_pipeline(smart_meter_path=_uploaded_csv_path)
-                  if (_uploaded_csv_path and os.path.exists(_uploaded_csv_path))
-                  else run_pipeline())
+            if _uploaded_csv_path and os.path.exists(_uploaded_csv_path):
+                df = run_pipeline(smart_meter_path=_uploaded_csv_path)
+            else:
+                raise RuntimeError("No registered CSV input is available; refusing to generate synthetic analytics.")
 
             models                    = train_all_models(df)
             predictions, forecast     = run_all_predictions(df, models)
@@ -755,6 +744,10 @@ def run_pipeline_endpoint():
             _save_pipeline_to_disk(new_cache)
             logger.info(f"[Pipeline] Completed: {len(df)} rows, source={data_source}")
         except Exception as e:
+            _pipeline_error = (
+                "Pipeline training failed. Check that the dataset contains valid "
+                "timestamps and consumption readings, then review the backend log."
+            )
             logger.error(f"[Pipeline] Background run failed: {e}", exc_info=True)
         finally:
             _pipeline_training = False   # always reset, even on error
@@ -770,9 +763,11 @@ def run_pipeline_endpoint():
 @app.get("/api/pipeline/status")
 def get_pipeline_status():
     is_training = _pipeline_training
-    # FIX Bug 1: has_cache must NOT require _uploaded_csv_path
-    # (synthetic runs set ready=True without an uploaded file)
-    has_cache = _pipeline_cache.get("ready", False)
+    has_cache = bool(_pipeline_cache.get("ready", False))
+    if _active_data_source == "none":
+        has_cache = False
+    elif _active_data_source == "csv" and not (_uploaded_csv_path and os.path.isfile(_uploaded_csv_path)):
+        has_cache = False
 
     response = {
         "is_training":       is_training,
@@ -783,6 +778,9 @@ def get_pipeline_status():
     if is_training:
         response.update({"ready": False, "status": "training",
                          "message": "Pipeline is currently training..."})
+    elif _pipeline_error:
+        response.update({"ready": False, "status": "error",
+                         "message": _pipeline_error})
     elif has_cache:
         df = _pipeline_cache.get("df")
         response.update({
@@ -799,15 +797,16 @@ def get_pipeline_status():
 
 # ── Pipeline clear ─────────────────────────────────────────────────────────────
 @app.post("/api/pipeline/clear")
-def clear_pipeline_cache():
-    global _pipeline_cache, _uploaded_csv_path
+def clear_pipeline_cache(user=Depends(get_current_user)):
+    global _pipeline_cache, _uploaded_csv_path, _uploaded_csv_name, _pipeline_error, _active_data_source
     if _pipeline_training:
         raise HTTPException(409, "Cannot clear cache while pipeline is training")
-    _pipeline_cache.clear()
+    _invalidate_pipeline_cache()
     _uploaded_csv_path = None
-    for p in [_CACHE_META_PATH, _CACHE_DF_PATH, _CACHE_PRED_PATH,
-              _CACHE_FC_PATH, _CACHE_ALERTS_PATH, _CACHE_RECS_PATH, _CACHE_ASUMMARY_PATH]:
-        pathlib.Path(p).unlink(missing_ok=True)
+    _uploaded_csv_name = None
+    if _active_data_source == "csv":
+        _active_data_source = "none"
+    _pipeline_error = None
     logger.info("[Cache] Pipeline cache cleared (memory + disk)")
     return {"status": "success", "message": "Cache cleared successfully (memory + disk)"}
 
@@ -1370,62 +1369,7 @@ def get_feature_importance():
     return result
 
 
-# ══════════════════════════════════════════════════════════
-#  LIVE EXCEL SYNC ENDPOINTS
-# ══════════════════════════════════════════════════════════
-
-@app.get("/api/sync/status")
-def sync_status():
-    if _sync_engine is None:
-        return {
-            "file_status": "unavailable", "pipeline_status": "idle",
-            "last_update": None, "last_attempt": None,
-            "rows_processed": 0, "columns_processed": 0,
-            "processing_duration_s": 0.0,
-            "error_message": "Excel Sync Engine not started — install watchdog>=4.0.0 and openpyxl>=3.1.2",
-            "error_code": "MISSING_DEPENDENCY", "warnings": [],
-            "watchdog_active": False, "watch_path": "",
-            "total_sync_count": 0, "sync_available": False,
-        }
-    status = _sync_engine.get_status()
-    status["sync_available"] = True
-    return status
-
-
-@app.post("/api/sync/trigger")
-def sync_trigger():
-    if _sync_engine is None:
-        raise HTTPException(503, "Excel Sync Engine not available.")
-    result = _sync_engine.trigger_manual()
-    if result.get("status") == "error":
-        raise HTTPException(404, result["message"])
-    if result.get("status") == "busy":
-        raise HTTPException(409, result["message"])
-    return result
-
-
-@app.get("/api/sync/logs")
-def sync_logs(lines: int = 100):
-    # FIX: Guard against missing watchdog/openpyxl (was crashing with ImportError)
-    if not _SYNC_AVAILABLE or _sync_engine is None:
-        return {
-            "lines": [],
-            "count": 0,
-            "log_path": "",
-            "error": "Excel Sync Engine not available — install watchdog>=4.0.0 and openpyxl>=3.1.2",
-        }
-    lines = max(1, min(lines, 500))
-    try:
-        from data.excel_sync import ExcelSyncEngine as _E
-        log_lines = _E.read_log_tail(lines)
-    except ImportError:
-        log_lines = []
-    return {
-        "lines":    log_lines,
-        "count":    len(log_lines),
-        "log_path": str(pathlib.Path(__file__).parent / "data" / "sync.log"),
-    }
-
+# CSV upload is the supported data input.
 
 # Shutdown is now handled in the lifespan context manager above (_lifespan).
 # The @app.on_event("shutdown") decorator was removed as it is deprecated in FastAPI 0.95+.
@@ -1433,4 +1377,5 @@ def sync_logs(lines: int = 100):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=False)
+    # Local runs bind to loopback; deployments can set API_HOST explicitly.
+    uvicorn.run("api:app", host=os.getenv("API_HOST", "127.0.0.1"), port=8000, reload=False)

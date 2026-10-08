@@ -188,7 +188,15 @@ class EmailNotifier:
         if not self._ready:
             print(f"[EmailNotifier] Skipping email for {len(alerts)} alerts — SMTP not configured")
             return
-        recipients = recipients or ALERT_EMAIL_RECIPIENTS
+        settings = _get_thresholds()
+        if not settings.get("smtp_enabled", False):
+            print("[EmailNotifier] Skipping alert email — email alerts are disabled in settings")
+            return
+        if recipients is None:
+            recipients = settings.get("alert_email_recipients", ALERT_EMAIL_RECIPIENTS)
+        if not recipients:
+            print("[EmailNotifier] Skipping alert email — no recipients are configured")
+            return
 
         critical = [a for a in alerts if a["severity"] == "critical"]
         warnings = [a for a in alerts if a["severity"] == "warning"]

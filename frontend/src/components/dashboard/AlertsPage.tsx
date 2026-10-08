@@ -33,20 +33,16 @@ const AlertsPage = () => {
   const mlReady = !!mlAlerts;
   const hasData = mlReady || !!analytics;
 
-  // Pull real alerts from backend when available
-  const backendAlerts = mlReady
-    ? (mlAlerts.alerts as {sev:string;rule:string;msg:string;time:string}[]) ?? []
-    : null;
-  const backendRecs = mlReady
-    ? (mlAlerts.recommendations as {priority:string;category:string;text:string;icon:string}[]) ?? []
-    : null;
   const [sevFilter, setSevFilter] = useState<SevFilter>("all");
 
   // Generate alerts from analytics
   const alerts = useMemo(() => {
     if (!hasData) return [];
     // Use real backend alerts when available
-    if (backendAlerts && backendAlerts.length > 0) {
+    const backendAlerts = mlReady
+      ? (mlAlerts.alerts as {sev:string;rule:string;msg:string;time:string}[]) ?? []
+      : [];
+    if (backendAlerts.length > 0) {
       return backendAlerts.map(a => ({
         sev: (a.sev === "critical" || a.sev === "warning" || a.sev === "info" ? a.sev : "info") as "critical"|"warning"|"info",
         rule: a.rule, msg: a.msg, time: a.time,
@@ -81,14 +77,16 @@ const AlertsPage = () => {
       list.push({ sev: "warning", rule: "Inefficiency Detected", msg: `${analytics.hourlyDistribution[3].hours} readings classified as inefficient.`, time: "From analysis" });
     }
     return list;
-  // FIX: added mlAlerts to deps — without it, alerts never updated when pipeline completed
-  }, [analytics, hasData, mlAlerts]);
+  }, [analytics, hasData, mlAlerts, mlReady]);
 
   // Generate recommendations from analytics
   const recs = useMemo(() => {
     if (!hasData) return [];
     // Use real backend recommendations when available
-    if (backendRecs && backendRecs.length > 0) {
+    const backendRecs = mlReady
+      ? (mlAlerts.recommendations as {priority:string;category:string;text:string;icon:string}[]) ?? []
+      : [];
+    if (backendRecs.length > 0) {
       return backendRecs.map(r => ({
         priority: (["critical","high","medium","info"].includes(r.priority) ? r.priority : "info") as "critical"|"high"|"medium"|"info",
         category: r.category, icon: r.icon, text: r.text,
@@ -115,8 +113,7 @@ const AlertsPage = () => {
       list.push({ priority: "info", category: "Renewable Energy", icon: "☀️", text: `Total consumption of ${analytics.totalConsumption.toFixed(0)} kWh suggests strong ROI for solar installation.` });
     }
     return list;
-  // FIX: added mlAlerts to deps — without it, recs never updated when pipeline completed
-  }, [analytics, hasData, mlAlerts]);
+  }, [analytics, hasData, mlAlerts, mlReady]);
 
   const filteredAlerts = sevFilter === "all" ? alerts : alerts.filter((a) => a.sev === sevFilter);
 

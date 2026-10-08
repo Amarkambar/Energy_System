@@ -11,7 +11,6 @@ const tabs = [
   { id: "alerts",    label: "Alerts",      icon: "◬" },
   { id: "forecast",  label: "Forecast",    icon: "◎" },
   { id: "pipeline",  label: "Pipeline",    icon: "◫" },
-  { id: "settings",  label: "Settings",    icon: "⚙" },
 ];
 
 const DashboardNav = ({ activeTab, onTabChange }: DashboardNavProps) => (

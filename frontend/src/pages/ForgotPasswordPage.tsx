@@ -38,8 +38,8 @@ const ForgotPasswordPage = () => {
               <p className="text-[12px] text-muted-foreground text-center mb-6">Enter your email to reset your password</p>
               <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 <div>
-                  <label className="text-[11px] text-muted-foreground uppercase tracking-widest font-head font-semibold mb-1.5 block">Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
+                  <label htmlFor="forgot-password-email" className="text-[11px] text-muted-foreground uppercase tracking-widest font-head font-semibold mb-1.5 block">Email</label>
+                  <input id="forgot-password-email" name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
                 </div>
                 {error && <p className="text-[11px] text-destructive">{error}</p>}
                 <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-head font-bold text-sm tracking-wide hover:opacity-90 transition-all cursor-pointer disabled:opacity-50">
@@ -51,8 +51,7 @@ const ForgotPasswordPage = () => {
             <div className="text-center py-4">
               <div className="w-14 h-14 rounded-full bg-secondary/10 flex items-center justify-center mx-auto mb-4 text-2xl">✉️</div>
               <h2 className="font-head text-lg font-bold mb-2">Check your email</h2>
-              <p className="text-[12px] text-muted-foreground mb-4">We've sent a password reset link to <span className="text-foreground font-semibold">{email}</span></p>
-              <Link to={`/reset-password?email=${encodeURIComponent(email)}`} className="text-[11px] text-primary hover:underline">Reset password now →</Link>
+              <p className="text-[12px] text-muted-foreground mb-4">If an account exists for <span className="text-foreground font-semibold">{email}</span>, and email delivery is configured, a password reset link will arrive shortly.</p>
             </div>
           )}
           <p className="text-[11px] text-muted-foreground text-center mt-5">

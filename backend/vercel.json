@@ -16,7 +16,7 @@
     }
   ],
   "env": {
-    "CORS_ORIGINS": "*",
+    "APP_ENV": "production",
     "PYTHONIOENCODING": "utf-8"
   }
 }

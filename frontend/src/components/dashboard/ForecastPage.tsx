@@ -26,11 +26,11 @@ const ForecastPage = () => {
 
   // Pull real forecast from backend
   const backendForecast = mlReady
-    ? (mlForecast.forecast as {time:string;forecast:number;lower:number;upper:number}[]) ?? []
-    : null;
+    ? mlForecast.forecast as {time:string;forecast:number;lower:number;upper:number}[] | undefined
+    : undefined;
   const backendPeakData = mlReady
-    ? (mlForecast.peakData as {time:string;probability:number}[]) ?? []
-    : null;
+    ? mlForecast.peakData as {time:string;probability:number}[] | undefined
+    : undefined;
 
   // Generate forecast from last data points with simple moving average + trend
   const forecastData = useMemo(() => {
@@ -62,7 +62,7 @@ const ForecastPage = () => {
       probability: +Math.min(99, Math.max(1, ((d.forecast - threshold * 0.5) / threshold) * 100)).toFixed(1),
       color: d.forecast > threshold ? COLORS.danger : d.forecast > threshold * 0.7 ? COLORS.warn : COLORS.accent,
     }));
-  }, [forecastData, analytics]);
+  }, [forecastData, analytics, backendPeakData]);
 
   return (
     <div>

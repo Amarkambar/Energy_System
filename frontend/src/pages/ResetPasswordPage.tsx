@@ -60,12 +60,12 @@ const ResetPasswordPage = () => {
               <p className="text-[12px] text-muted-foreground text-center mb-6">Set a new password for <span className="text-foreground font-semibold">{email}</span></p>
               <form onSubmit={handleReset} className="flex flex-col gap-4">
                 <div>
-                  <label className="text-[11px] text-muted-foreground uppercase tracking-widest font-head font-semibold mb-1.5 block">New Password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
+                  <label htmlFor="reset-new-password" className="text-[11px] text-muted-foreground uppercase tracking-widest font-head font-semibold mb-1.5 block">New Password</label>
+                  <input id="reset-new-password" name="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground uppercase tracking-widest font-head font-semibold mb-1.5 block">Confirm Password</label>
-                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
+                  <label htmlFor="reset-confirm-password" className="text-[11px] text-muted-foreground uppercase tracking-widest font-head font-semibold mb-1.5 block">Confirm Password</label>
+                  <input id="reset-confirm-password" name="confirm-password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" className="w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
                 </div>
                 {error && <p className="text-[11px] text-destructive">{error}</p>}
                 <button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-head font-bold text-sm tracking-wide hover:opacity-90 transition-all cursor-pointer disabled:opacity-50">

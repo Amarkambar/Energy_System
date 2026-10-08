@@ -1,7 +1,24 @@
 // components/dashboard/SettingsPage.tsx — Configurable alert thresholds + system info
 
-import { useState, useEffect } from "react";
+import { useId, useState, useEffect } from "react";
 import { toast } from "sonner";
+import {
+  AlertTriangle,
+  BellRing,
+  Check,
+  ChevronDown,
+  Download,
+  Gauge,
+  HardDrive,
+  KeyRound,
+  Mail,
+  MonitorCog,
+  RotateCcw,
+  Settings2,
+  ShieldCheck,
+  SlidersHorizontal,
+  Upload,
+} from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -89,6 +106,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const [recipientInput, setRecipientInput] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -97,12 +115,18 @@ export default function SettingsPage() {
     fetch(`${API}/api/settings/thresholds`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Settings request failed (${r.status})`);
+        return r.json();
+      })
       .then((d) => {
         setSettings({ ...DEFAULTS, ...d });
         setRecipientInput((d.alert_email_recipients ?? []).join(", "));
       })
-      .catch(() => toast.error("Failed to load settings"))
+      .catch(() => {
+        setLoadError(true);
+        toast.error("Failed to load settings. Changes cannot be confirmed until the API reconnects.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -128,9 +152,11 @@ export default function SettingsPage() {
       toast.success("Settings saved successfully");
       const d = await r.json();
       setSettings({ ...DEFAULTS, ...d.settings });
+      setLoadError(false);
       setHasUnsavedChanges(false);
-    } catch (e: any) {
-      toast.error(`Save failed: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`Save failed: ${message}`);
     } finally {
       setSaving(false);
     }
@@ -168,7 +194,7 @@ export default function SettingsPage() {
   function importSettings(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -182,6 +208,7 @@ export default function SettingsPage() {
       }
     };
     reader.readAsText(file);
+    event.target.value = "";
   }
 
   function calculateAlertSensitivity() {
@@ -196,111 +223,130 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+      <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 p-2" aria-label="Loading settings">
+        <div className="h-24 animate-pulse rounded-2xl border border-border bg-card/60" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="h-64 animate-pulse rounded-2xl border border-border bg-card/60" />
+          <div className="h-64 animate-pulse rounded-2xl border border-border bg-card/60" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 p-2">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Settings</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Configure alert thresholds and system preferences. Changes take effect
-            immediately without restarting the server.
-          </p>
-        </div>
-        {hasUnsavedChanges && (
-          <div className="flex items-center gap-2 bg-yellow-500/20 border border-yellow-500/30 rounded-lg px-3 py-2">
-            <span className="text-yellow-400 text-xs font-medium">⚠️ Unsaved changes</span>
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 p-2 pb-8 sm:space-y-8">
+      <header className="flex min-w-0 flex-col gap-5 rounded-2xl border border-border bg-card/70 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Settings2 className="h-6 w-6" />
           </div>
-        )}
-      </div>
+          <div className="min-w-0">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">Workspace</p>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Tune energy alerts, notification delivery, and system preferences.
+            </p>
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-3 sm:justify-end">
+          <div className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${loadError ? "border-destructive/30 bg-destructive/10 text-destructive" : hasUnsavedChanges ? "border-amber-500/30 bg-amber-500/10 text-amber-500" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"}`} role="status" aria-live="polite">
+            {loadError ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> : hasUnsavedChanges ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> : <Check className="h-3.5 w-3.5 shrink-0" />}
+            <span>{loadError ? "Could not verify saved settings" : hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}</span>
+          </div>
+        </div>
+      </header>
 
       {/* Industry Presets */}
-      <section className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-cyan-400 flex items-center gap-2">
-            <span>🏭</span> Industry Presets
-          </h2>
+      <section className="space-y-4 rounded-2xl border border-border bg-card/70 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><SlidersHorizontal className="h-5 w-5" /></div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Industry presets</h2>
+              <p className="text-xs text-muted-foreground">Start with thresholds tailored to your facility.</p>
+            </div>
+          </div>
           <button
             onClick={() => setShowPresets(!showPresets)}
-            className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
+            aria-expanded={showPresets}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            {showPresets ? "Hide" : "Show"} Presets
+            {showPresets ? "Hide presets" : "Browse presets"}
+            <ChevronDown className={`h-4 w-4 transition-transform ${showPresets ? "rotate-180" : ""}`} />
           </button>
         </div>
         
         {showPresets && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 border-t border-border pt-4 md:grid-cols-2 xl:grid-cols-3">
             {Object.entries(PRESETS).map(([key, preset]) => (
               <button
                 key={key}
                 onClick={() => applyPreset(key)}
-                className="bg-slate-900/60 border border-slate-700 hover:border-cyan-500/50 rounded-lg p-4 text-left transition-all group"
+                className="group rounded-xl border border-border bg-background/60 p-4 text-left transition-all hover:border-primary/50 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <h3 className="text-sm font-semibold text-white group-hover:text-cyan-400 transition-colors">
+                <h3 className="text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
                   {preset.name}
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">{preset.description}</p>
-                <div className="mt-3 space-y-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted-foreground">{preset.description}</p>
+                <div className="mt-4 space-y-2 border-t border-border pt-3 text-xs text-muted-foreground">
                   <div className="flex justify-between">
                     <span>Consumption:</span>
-                    <span className="text-slate-400">{preset.settings.alert_consumption_threshold} kWh</span>
+                    <span className="font-medium text-foreground">{preset.settings.alert_consumption_threshold} kWh</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Anomaly:</span>
-                    <span className="text-slate-400">{preset.settings.alert_anomaly_score_threshold}</span>
+                    <span className="font-medium text-foreground">{preset.settings.alert_anomaly_score_threshold}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Voltage:</span>
-                    <span className="text-slate-400">±{preset.settings.alert_voltage_deviation}V</span>
+                    <span className="font-medium text-foreground">±{preset.settings.alert_voltage_deviation} V</span>
                   </div>
                 </div>
               </button>
             ))}
           </div>
         )}
-        
-        <p className="text-xs text-slate-500">
-          Select a preset to quickly configure thresholds for your industry. You can customize values after applying.
-        </p>
       </section>
 
       {/* Alert Sensitivity Indicator */}
-      <section className="bg-gradient-to-r from-slate-800/60 to-slate-800/40 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center justify-between">
+      <section className="rounded-2xl border border-border bg-gradient-to-br from-primary/[0.08] via-card/70 to-card/40 p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-white">Alert Sensitivity</h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Overall sensitivity of your alert configuration
+            <div className="flex items-center gap-2 text-foreground">
+              <Gauge className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Alert sensitivity</h3>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Estimated responsiveness of the current threshold configuration.
             </p>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-cyan-400">{calculateAlertSensitivity()}%</div>
-            <div className="text-xs text-slate-500 mt-1">
-              {calculateAlertSensitivity() > 70 ? "High" : calculateAlertSensitivity() > 40 ? "Medium" : "Low"}
+          <div className="flex items-center gap-3 sm:min-w-40 sm:justify-end">
+            <div className="text-3xl font-bold tabular-nums text-primary">{calculateAlertSensitivity()}%</div>
+            <div className="text-xs text-muted-foreground">
+              <div className="font-medium text-foreground">{calculateAlertSensitivity() > 70 ? "High" : calculateAlertSensitivity() > 40 ? "Medium" : "Low"}</div>
+              Overall rating
             </div>
           </div>
         </div>
-        <div className="mt-4 bg-slate-900/60 rounded-full h-2 overflow-hidden">
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-background/70" role="progressbar" aria-label="Alert sensitivity" aria-valuenow={calculateAlertSensitivity()} aria-valuemin={0} aria-valuemax={100}>
           <div
-            className="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 transition-all duration-500"
             style={{ width: `${calculateAlertSensitivity()}%` }}
           />
         </div>
       </section>
 
       {/* Alert Thresholds */}
-      <section className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-6">
-        <h2 className="text-lg font-semibold text-cyan-400 flex items-center gap-2">
-          <span>⚡</span> Alert Thresholds
-        </h2>
+      <section className="min-w-0 space-y-6 rounded-2xl border border-border bg-card/70 p-5 shadow-sm sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><BellRing className="h-5 w-5" /></div>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Alert thresholds</h2>
+            <p className="text-xs text-muted-foreground">Set when the monitoring system should flag a reading.</p>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid min-w-0 grid-cols-1 gap-x-8 gap-y-6 border-t border-border pt-5 md:grid-cols-2">
           <NumberField
             label="Consumption Threshold (kWh)"
             description="Trigger a warning when hourly consumption exceeds this value."
@@ -356,39 +402,49 @@ export default function SettingsPage() {
       </section>
 
       {/* Email / SMTP */}
-      <section className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-5">
-        <h2 className="text-lg font-semibold text-cyan-400 flex items-center gap-2">
-          <span>📧</span> Email Notifications
-        </h2>
-
+      <section className="min-w-0 space-y-5 rounded-2xl border border-border bg-card/70 p-5 shadow-sm sm:p-6">
         <div className="flex items-center gap-3">
-          <div
-            className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${
-              settings.smtp_enabled ? "bg-cyan-500" : "bg-slate-600"
-            }`}
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Mail className="h-5 w-5" /></div>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Email notifications</h2>
+            <p className="text-xs text-muted-foreground">Choose whether alert messages should be sent by email.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-xl border border-border bg-background/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">Email alerts</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{settings.smtp_enabled ? "Delivery is enabled for the configured recipients." : "Delivery is currently turned off."}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.smtp_enabled}
+            aria-label="Enable email alerts"
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${settings.smtp_enabled ? "bg-primary" : "bg-muted"}`}
             onClick={() => {
               setSettings((s) => ({ ...s, smtp_enabled: !s.smtp_enabled }));
               setHasUnsavedChanges(true);
             }}
           >
             <div
-              className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                settings.smtp_enabled ? "translate-x-5" : "translate-x-0.5"
+              className={`absolute top-1 h-5 w-5 rounded-full bg-background shadow transition-transform ${
+                settings.smtp_enabled ? "translate-x-6" : "translate-x-1"
               }`}
             />
-          </div>
-          <span className="text-slate-300 text-sm">
-            Email alerts {settings.smtp_enabled ? "enabled" : "disabled"}
-          </span>
+          </button>
         </div>
 
-        <div>
-          <label className="block text-sm text-slate-400 mb-1">
-            Alert Recipients (comma-separated emails)
+        <div className="min-w-0">
+          <label htmlFor="alert-email-recipients" className="mb-2 block text-sm font-medium text-foreground">
+            Alert recipients
           </label>
+          <p className="mb-2 text-xs text-muted-foreground">Separate multiple email addresses with commas.</p>
           <input
+            id="alert-email-recipients"
+            name="alert-email-recipients"
             type="text"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+            className="block w-full min-w-0 rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             placeholder="admin@company.com, ops@company.com"
             value={recipientInput}
             onChange={(e) => {
@@ -398,43 +454,51 @@ export default function SettingsPage() {
           />
         </div>
 
-        <div className="bg-slate-900/60 rounded-lg p-4 text-xs text-slate-400 space-y-1">
-          <p className="font-semibold text-slate-300">SMTP Configuration</p>
+        <details className="group rounded-xl border border-border bg-background/50">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+            <span>SMTP delivery configuration</span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-2 border-t border-border px-4 pb-4 pt-3 text-xs text-muted-foreground">
           <p>
-            To enable real email sending, set these environment variables in{" "}
-            <code className="text-cyan-400 bg-slate-800 px-1 rounded">backend/.env</code>:
+            Configure these environment variables in <code className="rounded bg-muted px-1.5 py-0.5 text-primary">backend/.env</code> to enable email delivery:
           </p>
-          <pre className="bg-slate-800 rounded p-2 text-xs mt-2 overflow-x-auto">
+          <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-xs text-foreground">
 {`SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your@gmail.com
 SMTP_PASSWORD=your_app_password`}
           </pre>
-          <p className="text-yellow-400">
-            ⚠️ Use an App Password (not your real password) for Gmail accounts.
+          <p className="text-amber-500">
+            Use an app password for Gmail. Never use or share your regular account password.
           </p>
-        </div>
+          </div>
+        </details>
       </section>
 
       {/* System Info */}
-      <section className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-cyan-400 flex items-center gap-2">
-          <span>🖥️</span> System Info
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <section className="space-y-4 rounded-2xl border border-border bg-card/70 p-5 shadow-sm sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><MonitorCog className="h-5 w-5" /></div>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">System information</h2>
+            <p className="text-xs text-muted-foreground">Security and storage details for this workspace.</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 border-t border-border pt-4 sm:grid-cols-3">
           {[
-            { label: "Cache", value: "Disk-persistent (restart-proof)", icon: "💾" },
-            { label: "Auth", value: "HMAC token (7-day expiry)", icon: "🔐" },
-            { label: "Reset tokens", value: "15-minute one-time tokens", icon: "🔑" },
+            { label: "Cache", value: "Disk-persistent (restart-proof)", icon: HardDrive },
+            { label: "Authentication", value: "HMAC token (7-day expiry)", icon: ShieldCheck },
+            { label: "Reset tokens", value: "15-minute one-time tokens", icon: KeyRound },
           ].map((item) => (
             <div
               key={item.label}
-              className="bg-slate-900/60 rounded-lg p-4 flex items-start gap-3"
+              className="flex items-start gap-3 rounded-xl border border-border bg-background/50 p-4"
             >
-              <span className="text-2xl">{item.icon}</span>
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wider">{item.label}</p>
-                <p className="text-sm text-slate-300 mt-0.5">{item.value}</p>
+              <item.icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
+                <p className="mt-1 break-words text-sm text-foreground">{item.value}</p>
               </div>
             </div>
           ))}
@@ -442,42 +506,42 @@ SMTP_PASSWORD=your_app_password`}
       </section>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card/70 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={exportSettings}
-            className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:bg-slate-700 transition-colors flex items-center gap-2"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            <span>💾</span> Export
+            <Download className="h-4 w-4" /> Export
           </button>
-          <label className="cursor-pointer">
+          <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent">
             <input
+              id="settings-import-file"
+              name="settings-file"
               type="file"
               accept=".json"
               onChange={importSettings}
               className="hidden"
             />
-            <div className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:bg-slate-700 transition-colors flex items-center gap-2">
-              <span>📂</span> Import
-            </div>
+            <Upload className="h-4 w-4" /> Import
           </label>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:gap-3">
           <button
             onClick={reset}
-            className="px-5 py-2.5 rounded-lg border border-slate-600 text-slate-300 text-sm hover:bg-slate-700 transition-colors"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Reset to Defaults
+            <RotateCcw className="h-4 w-4" /> Reset defaults
           </button>
           <button
             onClick={save}
-            disabled={saving}
-            className="px-6 py-2.5 rounded-lg bg-cyan-500 text-slate-900 font-semibold text-sm hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            disabled={saving || !hasUnsavedChanges}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? (
               <>
-                <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
                 Saving…
               </>
             ) : (
@@ -508,30 +572,43 @@ function NumberField({
   step: number;
   onChange: (v: number) => void;
 }) {
+  const fieldId = useId();
+  const updateValue = (rawValue: string) => {
+    const parsed = Number(rawValue);
+    if (rawValue.trim() !== "" && Number.isFinite(parsed)) {
+      onChange(Math.min(max, Math.max(min, parsed)));
+    }
+  };
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-slate-300">{label}</label>
+    <div className="min-w-0 space-y-2">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <label htmlFor={`${fieldId}-number`} className="min-w-0 flex-1 break-words pt-1 text-sm font-medium text-foreground">{label}</label>
         <input
+          id={`${fieldId}-number`}
+          name={`${fieldId}-number`}
           type="number"
           min={min}
           max={max}
           step={step}
           value={value}
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-cyan-400 text-right focus:outline-none focus:border-cyan-500"
+          onChange={(e) => updateValue(e.target.value)}
+          className="w-24 shrink-0 rounded-lg border border-border bg-background px-2 py-1.5 text-right text-sm font-semibold tabular-nums text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
       <input
+        id={`${fieldId}-range`}
+        name={`${fieldId}-range`}
+        aria-label={`${label} slider`}
         type="range"
         min={min}
         max={max}
         step={step}
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full accent-cyan-500 cursor-pointer"
+        onChange={(e) => updateValue(e.target.value)}
+        className="w-full cursor-pointer accent-primary"
       />
-      <p className="text-xs text-slate-500">{description}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
     </div>
   );
 }

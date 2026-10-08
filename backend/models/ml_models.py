@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-import pickle
+import joblib          # pickle-based serialization; load only trusted model files
 import os
 import warnings
 warnings.filterwarnings("ignore")
@@ -34,14 +34,12 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 def save_model(model, path: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        pickle.dump(model, f)
-    print(f"[Model] Saved → {path}")
+    joblib.dump(model, path)
+    print(f"[Model] Saved -> {path}")
 
 
 def load_model(path: str):
-    with open(path, "rb") as f:
-        return pickle.load(f)
+    return joblib.load(path)
 
 
 def get_feature_cols(df: pd.DataFrame) -> list:
@@ -74,7 +72,11 @@ class AnomalyDetector:
         self._score_threshold: float | None = None
 
     def fit(self, df: pd.DataFrame):
+        if df is None or df.empty:
+            raise ValueError("Anomaly detection requires at least one training row; the dataset is empty.")
         self.feature_cols = get_feature_cols(df)
+        if not self.feature_cols:
+            raise ValueError("Anomaly detection requires at least one numeric feature column.")
         X = self.scaler.fit_transform(df[self.feature_cols].fillna(0))
         self.iso_forest.fit(X)
 
@@ -528,6 +530,10 @@ class EfficiencyScorer:
         result["efficiency_percentile"] = result["efficiency_score"].rank(pct=True).mul(100).round(1)
         return result
 
+    def score(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fit the clustering model on *df* and return efficiency scores."""
+        return self.fit(df).predict(df)
+
 
 # ══════════════════════════════════════════════════════════
 #  MODULE 5: ENSEMBLE FORECASTER
@@ -778,6 +784,14 @@ class EnsembleForecaster:
 
 def train_all_models(df: pd.DataFrame) -> dict:
     """Train all models and return them in a dict"""
+    if df is None or df.empty:
+        raise ValueError(
+            "Model training was stopped because feature engineering produced no rows. "
+            "Check that the uploaded data contains valid timestamps and consumption readings."
+        )
+    if "consumption_kwh" not in df.columns:
+        raise ValueError("Model training requires the 'consumption_kwh' target column.")
+
     print("\n" + "="*50)
     print("TRAINING ALL MODELS")
     print("="*50)

@@ -11,14 +11,13 @@ An AI-powered industrial energy monitoring and diagnostics platform built with *
 - 🎯 **Efficiency Scoring** — K-Means clustering with silhouette analysis
 - 🚨 **Smart Alerts** — Rule-based engine with AI recommendations
 - 📊 **Classification Metrics** — Confusion matrix, ROC curves, Precision-Recall, Feature Importance
-- 🔄 **Live Excel Sync** — Watchdog-based real-time CSV/Excel ingestion
 - 🔐 **Auth** — JWT + bcrypt, forgot/reset password with email tokens
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | Python 3.10, FastAPI, Uvicorn |
+| Backend | Python 3.12, FastAPI, Uvicorn |
 | ML | XGBoost, Scikit-learn, SHAP, Isolation Forest |
 | Database | MongoDB |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
@@ -50,6 +49,8 @@ npm run dev
 docker compose up --build
 ```
 
+Set `JWT_SECRET` in the shell or a root `.env` file before starting Docker Compose. Use a random secret with at least 32 characters. Production deployments must also set `APP_ENV=production` and `CORS_ORIGINS` to a comma-separated list of trusted frontend origins (for example, `https://app.example.com`). The API intentionally refuses to start in production without these settings.
+
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## Environment Variables
@@ -65,6 +66,7 @@ SMTP_USER=your@gmail.com
 SMTP_PASSWORD=your-app-password
 WEATHER_API_KEY=           # optional — OpenWeatherMap key
 FRONTEND_URL=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 
 > ⚠️ **Never commit your real `.env` file.** It is excluded via `.gitignore`.
@@ -78,7 +80,6 @@ project1/
 │   ├── config.py           # Central configuration
 │   ├── data/
 │   │   ├── pipeline.py     # Ingestion → features → preprocessing
-│   │   └── excel_sync.py   # Live file watcher
 │   ├── models/
 │   │   └── ml_models.py    # Anomaly, Forecast, Maintenance, Efficiency
 │   ├── alerts/

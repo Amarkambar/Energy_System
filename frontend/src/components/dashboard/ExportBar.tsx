@@ -1,21 +1,33 @@
-import { Download, FileText, FileSpreadsheet } from "lucide-react";
+import { FileText, FileSpreadsheet } from "lucide-react";
 import { useCsvData } from "@/lib/csv-context";
 
-const ExportBar = () => {
-  const { analytics, rawData, columns, fileName } = useCsvData();
+type ExportBarProps = {
+  dateFrom?: Date;
+  dateTo?: Date;
+};
+
+const escapeCsvField = (value: unknown) => {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+const ExportBar = ({ dateFrom, dateTo }: ExportBarProps) => {
+  const { analytics, parsedRows, columns, fileName } = useCsvData();
 
   if (!analytics) return null;
 
   const exportCsv = () => {
-    const header = columns.join(",");
-    const rows = rawData.map((row) =>
-      columns.map((col) => {
-        const val = String(row[col] ?? "");
-        return val.includes(",") || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val;
-      }).join(",")
-    );
-    const csv = [header, ...rows].join("\n");
-    downloadBlob(csv, "text/csv", `${(fileName || "export").replace(".csv", "")}_filtered.csv`);
+    const endOfDay = dateTo ? new Date(dateTo) : null;
+    endOfDay?.setHours(23, 59, 59, 999);
+    const exportedRows = parsedRows.filter(({ date }) => {
+      if (!date) return true;
+      if (dateFrom && date < dateFrom) return false;
+      if (endOfDay && date > endOfDay) return false;
+      return true;
+    });
+    const records = exportedRows.map(({ raw }) => columns.map((column) => escapeCsvField(raw[column])));
+    const csv = `\uFEFF${[columns.map(escapeCsvField).join(","), ...records.map((row) => row.join(","))].join("\r\n")}`;
+    downloadBlob(csv, "text/csv;charset=utf-8", `${baseName(fileName, "export")}_filtered.csv`);
   };
 
   const exportReport = () => {
@@ -65,8 +77,11 @@ const ExportBar = () => {
       "═══════════════════════════════════════════",
     );
 
-    downloadBlob(lines.join("\n"), "text/plain", `${(fileName || "report").replace(".csv", "")}_report.txt`);
+    downloadBlob(lines.join("\n"), "text/plain;charset=utf-8", `${baseName(fileName, "report")}_report.txt`);
   };
+
+  const baseName = (name: string | null, fallback: string) =>
+    (name || fallback).replace(/\.csv$/i, "").replace(/[\\/:*?"<>|]/g, "_");
 
   const downloadBlob = (content: string, type: string, name: string) => {
     const blob = new Blob([content], { type });
@@ -74,8 +89,11 @@ const ExportBar = () => {
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (

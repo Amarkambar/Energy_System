@@ -52,6 +52,7 @@ export interface MLDataState {
   refreshModels: () => Promise<void>;
   refreshPipelineStats: () => Promise<void>;
   refreshMetrics: () => Promise<void>;
+  refreshFromBackend: () => Promise<void>;
 }
 
 export function useMLData(): MLDataState {
@@ -199,7 +200,10 @@ export function useMLData(): MLDataState {
         const poll = setInterval(async () => {
           try {
             const status = await apiGetPipelineStatus();
-            if (!status.is_training && (status.has_cache || status.ready)) {
+            if (!status.is_training && status.status === "error") {
+              clearInterval(poll);
+              reject(new Error(status.message || "Pipeline training failed. Check the backend logs."));
+            } else if (!status.is_training && (status.has_cache || status.ready)) {
               clearInterval(poll);
               resolve();
             } else if (!status.is_training && !status.has_cache) {
@@ -224,6 +228,16 @@ export function useMLData(): MLDataState {
       setLoadState("error");
     }
   }, [fetchAll, refreshMetrics, startPolling, stopPolling, clearMLData]);
+
+  const refreshFromBackend = useCallback(async () => {
+    const status = await apiGetPipelineStatus();
+    if (status.has_cache || status.ready) {
+      setPipelineReady(true);
+      await fetchAll();
+      await refreshMetrics();
+      startPolling(false);
+    }
+  }, [fetchAll, refreshMetrics, startPolling]);
 
   const refreshOverview = useCallback(async () => {
     try { setOverview(await apiOverview()); } catch { /* silent */ }
@@ -266,5 +280,6 @@ export function useMLData(): MLDataState {
     refreshModels,
     refreshPipelineStats,
     refreshMetrics,
+    refreshFromBackend,
   };
 }

@@ -1,6 +1,6 @@
 # requirements-vercel.txt — slim deps for Vercel serverless deployment
 # Heavy optional packages (prophet, optuna, statsmodels, plotly, matplotlib,
-# seaborn, reportlab, redis, watchdog, openpyxl) are excluded to stay under
+# seaborn, reportlab, redis) are excluded to stay under
 # Vercel's 250 MB compressed function size limit.
 
 # ── Core API ──────────────────────────────────────────────────────────────────

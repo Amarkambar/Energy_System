@@ -1,14 +1,17 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir fastapi uvicorn pymongo python-dotenv pydantic[email] \
-    pandas numpy scikit-learn pyarrow requests python-dotenv
+# Install the declared runtime dependencies (the API imports joblib and the ML
+# stack directly; maintaining a second partial dependency list caused startup failures).
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && useradd --create-home --shell /usr/sbin/nologin appuser
 
-# Copy source
 COPY . .
+RUN chown -R appuser:appuser /app
+USER appuser
 
-# Run FastAPI (not Streamlit) as the main service
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+EXPOSE 8000
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]

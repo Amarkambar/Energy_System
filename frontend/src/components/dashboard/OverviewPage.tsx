@@ -39,6 +39,8 @@ const OverviewPage = () => {
   const { analytics, runAnalytics, rawData } = useCsvData();
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
   const [dateTo, setDateTo] = useState<Date | undefined>();
+  const [appliedDateFrom, setAppliedDateFrom] = useState<Date | undefined>();
+  const [appliedDateTo, setAppliedDateTo] = useState<Date | undefined>();
   const [activeCharts, setActiveCharts] = useState<Set<ChartToggle>>(
     new Set(["consumption", "voltage", "efficiency", "anomaly"])
   );
@@ -56,12 +58,18 @@ const OverviewPage = () => {
   };
 
   const handleApplyDateFilter = () => {
-    if (rawData.length > 0) runAnalytics(dateFrom || null, dateTo || null);
+    if (rawData.length > 0) {
+      setAppliedDateFrom(dateFrom);
+      setAppliedDateTo(dateTo);
+      runAnalytics(dateFrom || null, dateTo || null);
+    }
   };
 
   const handleClearDates = () => {
     setDateFrom(undefined);
     setDateTo(undefined);
+    setAppliedDateFrom(undefined);
+    setAppliedDateTo(undefined);
     if (rawData.length > 0) runAnalytics(null, null);
   };
 
@@ -110,7 +118,7 @@ const OverviewPage = () => {
 
       {hasData && (
         <div className="flex justify-end mb-4 -mt-2">
-          <ExportBar />
+          <ExportBar dateFrom={appliedDateFrom} dateTo={appliedDateTo} />
         </div>
       )}
 

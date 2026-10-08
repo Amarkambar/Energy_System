@@ -1,6 +1,6 @@
 """
 Quick security integration test — run with:
-    venv\Scripts\python test_security.py
+    venv\\Scripts\\python test_security.py
 """
 from passlib.context import CryptContext
 import hashlib, hmac
