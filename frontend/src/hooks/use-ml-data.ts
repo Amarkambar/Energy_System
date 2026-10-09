@@ -27,6 +27,7 @@ export type LoadState = "idle" | "loading" | "ready" | "error";
 
 export interface MLDataState {
   pipelineReady: boolean;
+  hasUploadedCsv: boolean;
   loadState: LoadState;
   error: string | null;
 
@@ -57,6 +58,7 @@ export interface MLDataState {
 
 export function useMLData(): MLDataState {
   const [pipelineReady, setPipelineReady] = useState(false);
+  const [hasUploadedCsv, setHasUploadedCsv] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -156,6 +158,7 @@ export function useMLData(): MLDataState {
     const checkStatus = async () => {
       try {
         const status = await apiGetPipelineStatus();
+        setHasUploadedCsv(status.has_uploaded_csv);
 
         if (status.is_training) {
           setLoadState("loading");
@@ -176,6 +179,7 @@ export function useMLData(): MLDataState {
         }
       } catch {
         setPipelineReady(false);
+        setHasUploadedCsv(false);
         setLoadState("idle");
       }
     };
@@ -200,6 +204,7 @@ export function useMLData(): MLDataState {
         const poll = setInterval(async () => {
           try {
             const status = await apiGetPipelineStatus();
+            setHasUploadedCsv(status.has_uploaded_csv);
             if (!status.is_training && status.status === "error") {
               clearInterval(poll);
               reject(new Error(status.message || "Pipeline training failed. Check the backend logs."));
@@ -261,6 +266,7 @@ export function useMLData(): MLDataState {
 
   return {
     pipelineReady,
+    hasUploadedCsv,
     loadState,
     error,
     overview,

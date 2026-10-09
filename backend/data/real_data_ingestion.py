@@ -205,7 +205,8 @@ class RealDataIngestor:
         filepath: str,
         validate: bool = True,
         clean: bool = True,
-        resample_freq: Optional[str] = None
+        resample_freq: Optional[str] = None,
+        output_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Load real sensor data from CSV
@@ -252,9 +253,10 @@ class RealDataIngestor:
         df["ingestion_time"] = datetime.now()
         
         # Save to real data directory
-        output_path = self.data_dir / f"processed_{Path(filepath).name}"
-        df.to_parquet(output_path, index=False)
-        logger.info(f"Saved processed data to: {output_path}")
+        processed_path = Path(output_path) if output_path else self.data_dir / f"processed_{Path(filepath).name}"
+        processed_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(processed_path, index=False)
+        logger.info(f"Saved processed data to: {processed_path}")
         
         return df
     

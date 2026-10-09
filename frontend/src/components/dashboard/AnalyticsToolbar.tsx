@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const AnalyticsToolbar = () => {
   const { fileName, status, error, uploadCsv, runAnalytics, clearData, autoRefresh, setAutoRefresh, rawData } = useCsvData();
-  const { runPipeline, pipelineReady, loadState } = useMlContext();
+  const { runPipeline, pipelineReady, hasUploadedCsv, loadState } = useMlContext();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,10 +53,10 @@ const AnalyticsToolbar = () => {
           {/* Run ML Pipeline */}
           <button
             onClick={() => runPipeline?.()}
-            disabled={loadState === "loading"}
+            disabled={loadState === "loading" || (rawData.length === 0 && !hasUploadedCsv)}
             className={cn(
               "flex items-center gap-2 px-4 py-2.5 rounded-xl font-head text-[12px] font-bold tracking-wide transition-all border",
-              loadState !== "loading"
+              loadState !== "loading" && (rawData.length > 0 || hasUploadedCsv)
                 ? "border-secondary/30 text-secondary bg-secondary/8 hover:bg-secondary/15 hover:border-secondary/50 cursor-pointer"
                 : "border-border text-muted-foreground cursor-not-allowed bg-muted/20"
             )}

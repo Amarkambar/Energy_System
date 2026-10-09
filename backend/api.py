@@ -112,18 +112,6 @@ users_col = db["users"]
 reset_tokens_col = db["password_reset_tokens"]
 _mongo_ready = False
 
-# ── Disk cache paths ───────────────────────────────────────────────────────────
-_CACHE_DIR          = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
-_CACHE_META_PATH    = os.path.join(_CACHE_DIR, "pipeline_meta.json")
-_CACHE_DF_PATH      = os.path.join(_CACHE_DIR, "pipeline_df.parquet")
-_CACHE_PRED_PATH    = os.path.join(_CACHE_DIR, "pipeline_pred.parquet")
-_CACHE_FC_PATH      = os.path.join(_CACHE_DIR, "pipeline_forecast.parquet")
-_CACHE_MODELS_PATH  = os.path.join(_CACHE_DIR, "pipeline_models.pkl")
-_CACHE_ALERTS_PATH  = os.path.join(_CACHE_DIR, "pipeline_alerts.parquet")
-_CACHE_RECS_PATH    = os.path.join(_CACHE_DIR, "pipeline_recs.json")
-_CACHE_ASUMMARY_PATH= os.path.join(_CACHE_DIR, "pipeline_alert_summary.json")
-os.makedirs(_CACHE_DIR, exist_ok=True)
-
 # ── Settings ───────────────────────────────────────────────────────────────────
 _SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "settings.json")
 _DEFAULT_SETTINGS = {
@@ -241,13 +229,8 @@ async def _lifespan(app: FastAPI):
     else:
         print(f"  ⚠️  Email notifications NOT CONFIGURED — missing: {', '.join(smtp_status['missing'])}")
 
-    # Restore disk cache
-    loaded = _load_pipeline_from_disk()
-    if loaded:
-        _pipeline_cache.update(loaded)
-        print("  ✅ Pipeline cache restored from disk")
-    else:
-        print("  ℹ️  No uploaded CSV — waiting for a data source.")
+    # Per-user workspace caches are restored lazily after authentication.
+    print("  ℹ️  User data workspaces will load when each account signs in.")
 
     print("══════════════════════════════════════════════════════════")
     print("")
@@ -338,6 +321,34 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return verify_token(credentials.credentials)
+
+def _get_user_pipeline_state(user=Depends(get_current_user)) -> dict:
+    """Resolve the pipeline workspace exclusively from the authenticated account."""
+    key = _workspace_key(user)
+    with _USER_STATES_LOCK:
+        state = _USER_STATES.get(key)
+        if state is None:
+            workspace = os.path.join(_USER_DATA_ROOT, key)
+            paths = _workspace_paths(workspace)
+            os.makedirs(os.path.dirname(paths["upload"]), exist_ok=True)
+            os.makedirs(paths["cache_dir"], exist_ok=True)
+            meta = {}
+            try:
+                with open(paths["meta"], encoding="utf-8") as f:
+                    meta = json.load(f)
+            except (OSError, ValueError):
+                pass
+            upload_exists = os.path.isfile(paths["upload"])
+            state = {
+                "key": key, "workspace": workspace, "paths": paths,
+                "lock": threading.RLock(), "cache": _load_pipeline_from_disk(paths),
+                "training": False, "error": None,
+                "uploaded_path": paths["upload"] if upload_exists else None,
+                "uploaded_name": meta.get("uploaded_name") if upload_exists else None,
+                "source": "csv" if upload_exists else "none",
+            }
+            _USER_STATES[key] = state
+        return state
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
 class RegisterRequest(BaseModel):
@@ -522,17 +533,16 @@ def health():
         "dependencies": {
             "mongodb": "connected" if mongo_ok else "disconnected",
             "smtp_email": "configured" if _SMTP_READY else "not_configured",
-            "pipeline_cache": "ready" if _pipeline_cache.get("ready") else "empty",
-            "pipeline_training": _pipeline_training,
+            "pipeline_cache": "available per account",
+            "active_user_pipelines": sum(1 for s in _USER_STATES.values() if s["training"]),
         },
     }
 
 # ── Energy data summary (protected) ───────────────────────────────────────────
 @app.get("/api/data/summary")
-def data_summary(user=Depends(get_current_user)):
+def data_summary(state=Depends(_get_user_pipeline_state)):
     try:
-        from data.pipeline import run_pipeline
-        df = run_pipeline()
+        df = _get_pipeline_data(state)["df"]
         recent = df.tail(24)
         return {
             "total_consumption_kwh": round(float(recent["consumption_kwh"].sum()), 2),
@@ -540,6 +550,8 @@ def data_summary(user=Depends(get_current_user)):
             "peak_kwh":              round(float(recent["consumption_kwh"].max()), 2),
             "records": len(df),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         return {"error": str(e), "message": "Pipeline not yet initialised"}
 
@@ -547,46 +559,72 @@ def data_summary(user=Depends(get_current_user)):
 #  ML PIPELINE + MODEL ENDPOINTS
 # ══════════════════════════════════════════════════════════
 
-# ── Disk-persistent cache helpers ─────────────────────────────────────────────
+# ── Per-user disk-persistent cache helpers ────────────────────────────────────
 
-def _save_pipeline_to_disk(cache: dict):
+_USER_DATA_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "user_workspaces")
+os.makedirs(_USER_DATA_ROOT, exist_ok=True)
+_USER_STATES: dict[str, dict] = {}
+_USER_STATES_LOCK = threading.RLock()
+
+def _workspace_key(user: dict) -> str:
+    email = str(user.get("email", "")).strip().lower()
+    if not email:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return hashlib.sha256(email.encode("utf-8")).hexdigest()
+
+def _workspace_paths(workspace: str) -> dict[str, str]:
+    cache_dir = os.path.join(workspace, "cache")
+    return {
+        "cache_dir": cache_dir,
+        "meta": os.path.join(cache_dir, "pipeline_meta.json"),
+        "df": os.path.join(cache_dir, "pipeline_df.parquet"),
+        "pred": os.path.join(cache_dir, "pipeline_pred.parquet"),
+        "forecast": os.path.join(cache_dir, "pipeline_forecast.parquet"),
+        "models": os.path.join(cache_dir, "pipeline_models.pkl"),
+        "alerts": os.path.join(cache_dir, "pipeline_alerts.parquet"),
+        "recs": os.path.join(cache_dir, "pipeline_recs.json"),
+        "summary": os.path.join(cache_dir, "pipeline_alert_summary.json"),
+        "upload": os.path.join(workspace, "uploads", "uploaded_data.csv"),
+    }
+
+def _save_pipeline_to_disk(cache: dict, paths: dict[str, str], uploaded_name: str | None = None):
     try:
-        cache["df"].to_parquet(_CACHE_DF_PATH, index=False)
-        cache["predictions"].to_parquet(_CACHE_PRED_PATH, index=False)
-        cache["forecast"].to_parquet(_CACHE_FC_PATH, index=False)
+        cache["df"].to_parquet(paths["df"], index=False)
+        cache["predictions"].to_parquet(paths["pred"], index=False)
+        cache["forecast"].to_parquet(paths["forecast"], index=False)
         if not cache.get("alerts_df", pd.DataFrame()).empty:
-            cache["alerts_df"].to_parquet(_CACHE_ALERTS_PATH, index=False)
-        joblib.dump(cache["models"], _CACHE_MODELS_PATH)
+            cache["alerts_df"].to_parquet(paths["alerts"], index=False)
+        joblib.dump(cache["models"], paths["models"])
 
-        with open(_CACHE_RECS_PATH, "w") as f:
+        with open(paths["recs"], "w", encoding="utf-8") as f:
             json.dump(cache.get("recs", []), f)
-        with open(_CACHE_ASUMMARY_PATH, "w") as f:
+        with open(paths["summary"], "w", encoding="utf-8") as f:
             json.dump(cache.get("alert_summary", {}), f)
-        with open(_CACHE_META_PATH, "w") as f:
-            json.dump({"ready": True, "saved_at": time.time()}, f)
-        logger.info("[Cache] Pipeline results saved to disk")
+        with open(paths["meta"], "w", encoding="utf-8") as f:
+            json.dump({"ready": True, "saved_at": time.time(), "uploaded_name": uploaded_name}, f)
+        logger.info("[Cache] Account pipeline results saved to its workspace")
     except Exception as e:
         logger.warning(f"[Cache] Failed to save to disk: {e}")
 
-def _load_pipeline_from_disk() -> dict:
+def _load_pipeline_from_disk(paths: dict[str, str]) -> dict:
     try:
-        if not os.path.exists(_CACHE_META_PATH):
+        if not os.path.exists(paths["meta"]):
             return {}
-        with open(_CACHE_META_PATH) as f:
+        with open(paths["meta"], encoding="utf-8") as f:
             meta = json.load(f)
         if not meta.get("ready"):
             return {}
-        df        = pd.read_parquet(_CACHE_DF_PATH)
-        preds     = pd.read_parquet(_CACHE_PRED_PATH)
-        forecast  = pd.read_parquet(_CACHE_FC_PATH)
-        alerts_df = pd.read_parquet(_CACHE_ALERTS_PATH) if os.path.exists(_CACHE_ALERTS_PATH) else pd.DataFrame()
-        models = joblib.load(_CACHE_MODELS_PATH)
+        df        = pd.read_parquet(paths["df"])
+        preds     = pd.read_parquet(paths["pred"])
+        forecast  = pd.read_parquet(paths["forecast"])
+        alerts_df = pd.read_parquet(paths["alerts"]) if os.path.exists(paths["alerts"]) else pd.DataFrame()
+        models = joblib.load(paths["models"])
 
-        with open(_CACHE_RECS_PATH) as f:
+        with open(paths["recs"], encoding="utf-8") as f:
             recs = json.load(f)
-        with open(_CACHE_ASUMMARY_PATH) as f:
+        with open(paths["summary"], encoding="utf-8") as f:
             alert_summary = json.load(f)
-        logger.info(f"[Cache] Loaded persisted pipeline ({len(df)} rows) from disk")
+        logger.info(f"[Cache] Loaded account pipeline ({len(df)} rows) from its workspace")
         return {
             "ready": True,
             "df": df, "predictions": preds, "forecast": forecast,
@@ -597,31 +635,23 @@ def _load_pipeline_from_disk() -> dict:
         logger.warning(f"[Cache] Failed to load from disk: {e}")
         return {}
 
-# ── In-memory pipeline state ───────────────────────────────────────────────────
-_pipeline_cache: dict    = {}
-_pipeline_training: bool = False
-_pipeline_error: str | None = None
-_uploaded_csv_path: str | None = None
-_uploaded_csv_name: str | None = None
-_active_data_source: str = "none"
+# ── Per-user in-memory pipeline state ─────────────────────────────────────────
+
+def _invalidate_pipeline_cache(state: dict) -> None:
+    """Remove only this account's stale analytics."""
+    state["cache"].clear()
+    for cache_path in state["paths"].values():
+        if os.path.isfile(cache_path):
+            pathlib.Path(cache_path).unlink(missing_ok=True)
 
 
-def _invalidate_pipeline_cache() -> None:
-    """Remove stale analytics when the selected source changes."""
-    _pipeline_cache.clear()
-    for cache_path in (_CACHE_META_PATH, _CACHE_DF_PATH, _CACHE_PRED_PATH,
-                       _CACHE_FC_PATH, _CACHE_ALERTS_PATH, _CACHE_RECS_PATH,
-                       _CACHE_ASUMMARY_PATH):
-        pathlib.Path(cache_path).unlink(missing_ok=True)
-
-
-def _get_pipeline_data() -> dict:
+def _get_pipeline_data(state: dict) -> dict:
     """
     FIX: Return 503 with a clear, user-readable message instead of letting
     downstream code crash with a 500 when the cache is empty.
     Callers must re-raise HTTPException so 503 is not swallowed as 500.
     """
-    if _pipeline_training:
+    if state["training"]:
         raise HTTPException(
             status_code=503,
             detail={
@@ -629,12 +659,12 @@ def _get_pipeline_data() -> dict:
                 "message": "Pipeline is currently training. Please wait and try again.",
             },
         )
-    if _active_data_source == "none":
+    if state["source"] == "none":
         raise HTTPException(503, detail={"status": "no_source", "message": "Upload a CSV file to view analytics."})
-    if _active_data_source == "csv" and not (_uploaded_csv_path and os.path.isfile(_uploaded_csv_path)):
+    if state["source"] == "csv" and not (state["uploaded_path"] and os.path.isfile(state["uploaded_path"])):
         raise HTTPException(503, detail={"status": "no_source", "message": "The active CSV is unavailable. Upload it again to continue."})
-    if _pipeline_cache.get("ready"):
-        return _pipeline_cache
+    if state["cache"].get("ready"):
+        return state["cache"]
     raise HTTPException(
         status_code=503,
         detail={
@@ -665,44 +695,33 @@ def _safe_endpoint(fn):
 
 # ── CSV upload ─────────────────────────────────────────────────────────────────
 @app.post("/api/data/upload-csv")
-async def upload_csv(file: UploadFile = File(...), user=Depends(get_current_user)):
-    global _uploaded_csv_path, _uploaded_csv_name, _pipeline_error, _active_data_source
+async def upload_csv(file: UploadFile = File(...), state=Depends(_get_user_pipeline_state)):
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Only CSV files are allowed")
-    if _pipeline_training:
-        raise HTTPException(409, "Cannot upload a new CSV while the pipeline is training")
-    data_dir  = os.path.join(os.path.dirname(__file__), "data", "uploads")
-    os.makedirs(data_dir, exist_ok=True)
-    file_path = os.path.join(data_dir, "uploaded_data.csv")
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        _uploaded_csv_path = file_path
-        _uploaded_csv_name = pathlib.Path(file.filename or "uploaded_data.csv").name
-        _active_data_source = "csv"
-        _pipeline_error = None
-        _pipeline_cache.clear()
-        for p in [_CACHE_META_PATH, _CACHE_DF_PATH, _CACHE_PRED_PATH,
-                  _CACHE_FC_PATH, _CACHE_ALERTS_PATH, _CACHE_RECS_PATH, _CACHE_ASUMMARY_PATH]:
-            pathlib.Path(p).unlink(missing_ok=True)
-        logger.info(f"[Upload] New CSV saved, old cache invalidated: {file.filename}")
-        return {"status": "success", "message": f"File '{file.filename}' uploaded successfully"}
-    except Exception as e:
-        raise HTTPException(500, f"File upload failed: {str(e)}")
+    with state["lock"]:
+        if state["training"]:
+            raise HTTPException(409, "Cannot upload a new CSV while your pipeline is training")
+        try:
+            with open(state["paths"]["upload"], "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            state["uploaded_path"] = state["paths"]["upload"]
+            state["uploaded_name"] = pathlib.Path(file.filename or "uploaded_data.csv").name
+            state["source"] = "csv"
+            state["error"] = None
+            _invalidate_pipeline_cache(state)
+            with open(state["paths"]["meta"], "w", encoding="utf-8") as f:
+                json.dump({"ready": False, "uploaded_name": state["uploaded_name"]}, f)
+            logger.info(f"[Upload] CSV saved in account workspace {state['key']}")
+            return {"status": "success", "filename": state["uploaded_name"],
+                    "message": f"File '{state['uploaded_name']}' uploaded successfully"}
+        except Exception as e:
+            raise HTTPException(500, f"File upload failed: {str(e)}")
 
 
 # ── Pipeline run ───────────────────────────────────────────────────────────────
 @app.post("/api/pipeline/run")
-def run_pipeline_endpoint(user=Depends(get_current_user)):
-    global _pipeline_training, _pipeline_cache, _pipeline_error
-
-    if _pipeline_training:
-        raise HTTPException(409, "Pipeline is already running")
-
-    if _active_data_source == "none" and not (_uploaded_csv_path and os.path.exists(_uploaded_csv_path)):
-        raise HTTPException(409, "Upload a CSV file before running analytics.")
-
-    # Pre-flight import check
+def run_pipeline_endpoint(state=Depends(_get_user_pipeline_state)):
+    # Pre-flight before marking this account as training.
     try:
         from data.pipeline import run_pipeline
         from models.ml_models import train_all_models, run_all_predictions
@@ -710,31 +729,39 @@ def run_pipeline_endpoint(user=Depends(get_current_user)):
     except ImportError as e:
         raise HTTPException(500, f"Required module missing: {str(e)}")
 
-    # FIX Bug 4: set _pipeline_training = True BEFORE launching the thread
-    _pipeline_training = True
-    _pipeline_error = None
+    with state["lock"]:
+        if state["training"]:
+            raise HTTPException(409, "Your pipeline is already running")
+        upload_path = state["uploaded_path"]
+        uploaded_name = state["uploaded_name"]
+        data_source = state["source"]
+        if data_source == "none" or not (upload_path and os.path.exists(upload_path)):
+            raise HTTPException(409, "Upload a CSV file before running analytics.")
+        state["training"] = True
+        state["error"] = None
 
     def _run_in_background():
-        global _pipeline_training, _pipeline_cache, _pipeline_error
         try:
             from data.pipeline import run_pipeline
             from models.ml_models import train_all_models, run_all_predictions
             from alerts.alerts_engine import AlertEngine, RecommendationEngine
 
-            data_source = _active_data_source
-            if _uploaded_csv_path and os.path.exists(_uploaded_csv_path):
+            if upload_path and os.path.exists(upload_path):
                 try:
                     from data.real_data_ingestion import RealDataIngestor
                     ingestor = RealDataIngestor()
-                    validation_result = ingestor.validate_csv(_uploaded_csv_path)
+                    validation_result = ingestor.validate_csv(upload_path)
                     data_source = ("real_sensor_validated" if validation_result["is_valid"]
                                    else "uploaded_csv_fallback")
                 except Exception as ve:
                     logger.warning(f"[Pipeline] Validation failed: {ve}")
                     data_source = "uploaded_csv_unvalidated"
 
-            if _uploaded_csv_path and os.path.exists(_uploaded_csv_path):
-                df = run_pipeline(smart_meter_path=_uploaded_csv_path)
+            if upload_path and os.path.exists(upload_path):
+                df = run_pipeline(
+                    smart_meter_path=upload_path,
+                    output_path=os.path.join(state["workspace"], "processed_energy_data.parquet"),
+                )
             else:
                 raise RuntimeError("No registered CSV input is available; refusing to generate synthetic analytics.")
 
@@ -752,17 +779,17 @@ def run_pipeline_endpoint(user=Depends(get_current_user)):
                 "alerts_df": alerts_df, "alert_summary": alert_summary,
                 "recs": recs, "models": models,
             }
-            _pipeline_cache.update(new_cache)
-            _save_pipeline_to_disk(new_cache)
-            logger.info(f"[Pipeline] Completed: {len(df)} rows, source={data_source}")
+            state["cache"].update(new_cache)
+            _save_pipeline_to_disk(new_cache, state["paths"], uploaded_name)
+            logger.info(f"[Pipeline] Completed for account {state['key']}: {len(df)} rows, source={data_source}")
         except Exception as e:
-            _pipeline_error = (
+            state["error"] = (
                 "Pipeline training failed. Check that the dataset contains valid "
                 "timestamps and consumption readings, then review the backend log."
             )
             logger.error(f"[Pipeline] Background run failed: {e}", exc_info=True)
         finally:
-            _pipeline_training = False   # always reset, even on error
+            state["training"] = False   # always reset, even on error
 
     threading.Thread(target=_run_in_background, daemon=True).start()
     return {
@@ -773,28 +800,28 @@ def run_pipeline_endpoint(user=Depends(get_current_user)):
 
 # ── Pipeline status ────────────────────────────────────────────────────────────
 @app.get("/api/pipeline/status")
-def get_pipeline_status():
-    is_training = _pipeline_training
-    has_cache = bool(_pipeline_cache.get("ready", False))
-    if _active_data_source == "none":
+def get_pipeline_status(state=Depends(_get_user_pipeline_state)):
+    is_training = state["training"]
+    has_cache = bool(state["cache"].get("ready", False))
+    if state["source"] == "none":
         has_cache = False
-    elif _active_data_source == "csv" and not (_uploaded_csv_path and os.path.isfile(_uploaded_csv_path)):
+    elif state["source"] == "csv" and not (state["uploaded_path"] and os.path.isfile(state["uploaded_path"])):
         has_cache = False
 
     response = {
         "is_training":       is_training,
         "has_cache":         has_cache,
-        "has_uploaded_csv":  _uploaded_csv_path is not None,
+        "has_uploaded_csv":  state["uploaded_path"] is not None,
     }
 
     if is_training:
         response.update({"ready": False, "status": "training",
                          "message": "Pipeline is currently training..."})
-    elif _pipeline_error:
+    elif state["error"]:
         response.update({"ready": False, "status": "error",
-                         "message": _pipeline_error})
+                         "message": state["error"]})
     elif has_cache:
-        df = _pipeline_cache.get("df")
+        df = state["cache"].get("df")
         response.update({
             "ready":   True,
             "status":  "ready",
@@ -809,25 +836,26 @@ def get_pipeline_status():
 
 # ── Pipeline clear ─────────────────────────────────────────────────────────────
 @app.post("/api/pipeline/clear")
-def clear_pipeline_cache(user=Depends(get_current_user)):
-    global _pipeline_cache, _uploaded_csv_path, _uploaded_csv_name, _pipeline_error, _active_data_source
-    if _pipeline_training:
-        raise HTTPException(409, "Cannot clear cache while pipeline is training")
-    _invalidate_pipeline_cache()
-    _uploaded_csv_path = None
-    _uploaded_csv_name = None
-    if _active_data_source == "csv":
-        _active_data_source = "none"
-    _pipeline_error = None
-    logger.info("[Cache] Pipeline cache cleared (memory + disk)")
+def clear_pipeline_cache(state=Depends(_get_user_pipeline_state)):
+    with state["lock"]:
+        if state["training"]:
+            raise HTTPException(409, "Cannot clear your pipeline while it is training")
+        _invalidate_pipeline_cache(state)
+        if state["uploaded_path"]:
+            pathlib.Path(state["uploaded_path"]).unlink(missing_ok=True)
+        state["uploaded_path"] = None
+        state["uploaded_name"] = None
+        state["source"] = "none"
+        state["error"] = None
+    logger.info(f"[Cache] Cleared account workspace {state['key']}")
     return {"status": "success", "message": "Cache cleared successfully (memory + disk)"}
 
 
 # ── /api/data/overview ────────────────────────────────────────────────────────
 @app.get("/api/data/overview")
 @_safe_endpoint
-def overview():
-    data        = _get_pipeline_data()
+def overview(state=Depends(_get_user_pipeline_state)):
+    data        = _get_pipeline_data(state)
     df          = data["df"]
     predictions = data["predictions"]
     recent      = predictions.tail(168)
@@ -906,8 +934,8 @@ def overview():
 # ── /api/data/forecast ────────────────────────────────────────────────────────
 @app.get("/api/data/forecast")
 @_safe_endpoint
-def forecast_endpoint():
-    data     = _get_pipeline_data()
+def forecast_endpoint(state=Depends(_get_user_pipeline_state)):
+    data     = _get_pipeline_data(state)
     forecast = data["forecast"]
     df       = data["df"]
 
@@ -945,8 +973,8 @@ def forecast_endpoint():
 # ── /api/data/alerts ──────────────────────────────────────────────────────────
 @app.get("/api/data/alerts")
 @_safe_endpoint
-def alerts_endpoint():
-    data      = _get_pipeline_data()
+def alerts_endpoint(state=Depends(_get_user_pipeline_state)):
+    data      = _get_pipeline_data(state)
     alerts_df = data["alerts_df"]
     recs      = data["recs"]
     summary   = data["alert_summary"]
@@ -981,8 +1009,8 @@ def alerts_endpoint():
 # ── /api/data/models ──────────────────────────────────────────────────────────
 @app.get("/api/data/models")
 @_safe_endpoint
-def models_endpoint():
-    data        = _get_pipeline_data()
+def models_endpoint(state=Depends(_get_user_pipeline_state)):
+    data        = _get_pipeline_data(state)
     predictions = data["predictions"]
     models      = data["models"]
     df          = data["df"]
@@ -1102,8 +1130,8 @@ def models_endpoint():
 # ── /api/data/pipeline-stats ──────────────────────────────────────────────────
 @app.get("/api/data/pipeline-stats")
 @_safe_endpoint
-def pipeline_stats():
-    data        = _get_pipeline_data()
+def pipeline_stats(state=Depends(_get_user_pipeline_state)):
+    data        = _get_pipeline_data(state)
     df          = data["df"]
     predictions = data["predictions"]
 
@@ -1204,10 +1232,8 @@ def _get_classification_metrics_data(data):
 
 @app.get("/api/metrics/confusion-matrix")
 @_safe_endpoint
-def get_confusion_matrix():
-    if not _pipeline_cache.get("ready"):
-        return {"error": "Pipeline not run yet", "detail": "Click Run Pipeline first"}
-    data = _get_pipeline_data()
+def get_confusion_matrix(state=Depends(_get_user_pipeline_state)):
+    data = _get_pipeline_data(state)
     try:
         from models.metrics_calculator import MetricsCalculator
     except ImportError as e:
@@ -1231,12 +1257,10 @@ def get_confusion_matrix():
 
 @app.get("/api/metrics/roc-curves")
 @_safe_endpoint
-def get_roc_curves():
-    if not _pipeline_cache.get("ready"):
-        return {"error": "Pipeline not run yet", "detail": "Click Run Pipeline first"}
+def get_roc_curves(state=Depends(_get_user_pipeline_state)):
     import numpy as np
     from models.metrics_calculator import MetricsCalculator
-    data                             = _get_pipeline_data()
+    data                             = _get_pipeline_data(state)
     y_true, y_pred, y_prob, classes  = _get_classification_metrics_data(data)
     if y_true is None:
         return {"error": "No data available"}
@@ -1256,12 +1280,10 @@ def get_roc_curves():
 
 @app.get("/api/metrics/precision-recall")
 @_safe_endpoint
-def get_precision_recall():
-    if not _pipeline_cache.get("ready"):
-        return {"error": "Pipeline not run yet", "detail": "Click Run Pipeline first"}
+def get_precision_recall(state=Depends(_get_user_pipeline_state)):
     import numpy as np
     from models.metrics_calculator import MetricsCalculator
-    data                             = _get_pipeline_data()
+    data                             = _get_pipeline_data(state)
     y_true, y_pred, y_prob, classes  = _get_classification_metrics_data(data)
     if y_true is None:
         return {"error": "No data available"}
@@ -1281,13 +1303,11 @@ def get_precision_recall():
 
 @app.get("/api/metrics/comparison")
 @_safe_endpoint
-def get_model_comparison():
-    if not _pipeline_cache.get("ready"):
-        return {"error": "Pipeline not run yet", "detail": "Click Run Pipeline first"}
+def get_model_comparison(state=Depends(_get_user_pipeline_state)):
     import numpy as np
     from models.metrics_calculator import ModelComparator
     from sklearn.model_selection import train_test_split
-    data       = _get_pipeline_data()
+    data       = _get_pipeline_data(state)
     df         = data.get("df")
     models     = data.get("models")
     if df is None or df.empty:
@@ -1316,12 +1336,10 @@ def get_model_comparison():
 
 @app.get("/api/metrics/feature-importance")
 @_safe_endpoint
-def get_feature_importance():
-    if not _pipeline_cache.get("ready"):
-        return {"error": "Pipeline not run yet", "detail": "Click Run Pipeline first"}
+def get_feature_importance(state=Depends(_get_user_pipeline_state)):
     from models.feature_selection import FeatureSelector, PCAReducer
     from models.ml_models import get_feature_cols
-    data   = _get_pipeline_data()
+    data   = _get_pipeline_data(state)
     df     = data.get("df")
     models = data.get("models")
     if df is None or df.empty or models is None:

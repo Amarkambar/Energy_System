@@ -396,6 +396,7 @@ def run_pipeline(
     smart_meter_path: str = None,
     iot_path: str = None,
     use_real_data: bool = True,
+    output_path: str = PARQUET_PATH,
 ) -> pd.DataFrame:
     """
     Full pipeline: ingest → clean → normalize → feature engineering → save
@@ -426,6 +427,7 @@ def run_pipeline(
                     smart_meter_path,
                     clean=True,
                     resample_freq="1H",
+                    output_path=output_path,
                 )
                 print(f"[Pipeline] ✓ Loaded {len(df)} rows of real sensor data")
 
@@ -495,7 +497,7 @@ def run_pipeline(
     df = build_feature_matrix(df)
 
     # ── Step 4: Persist ───────────────────────────────────────────────────────
-    save_to_parquet(df)
+    save_to_parquet(df, output_path)
 
     return df
 
