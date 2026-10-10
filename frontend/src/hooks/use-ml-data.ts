@@ -46,7 +46,7 @@ export interface MLDataState {
   featureImportance: FeatureImportanceData | null;
 
   // Actions
-  runPipeline: () => Promise<void>;
+  runPipeline: (attachToActiveRun?: boolean) => Promise<void>;
   refreshOverview: () => Promise<void>;
   refreshForecast: () => Promise<void>;
   refreshAlerts: () => Promise<void>;
@@ -153,51 +153,20 @@ export function useMLData(): MLDataState {
     }, intervalMs);
   }, [fetchAll, refreshMetrics]);
 
-  // ── On mount: check if backend already has cached data (survives Ctrl+R) ──
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const status = await apiGetPipelineStatus();
-        setHasUploadedCsv(status.has_uploaded_csv);
-
-        if (status.is_training) {
-          setLoadState("loading");
-          setPipelineReady(false);
-          stopPolling();
-          clearMLData();
-        } else if (status.has_cache || status.ready) {
-          // Backend already has results — restore them immediately
-          setPipelineReady(true);
-          await fetchAll();
-          await refreshMetrics();
-          startPolling(false); // pipeline is ready — use slow 30s polling
-        } else {
-          setPipelineReady(false);
-          setLoadState("idle");
-          stopPolling();
-          clearMLData();
-        }
-      } catch {
-        setPipelineReady(false);
-        setHasUploadedCsv(false);
-        setLoadState("idle");
-      }
-    };
-
-    checkStatus();
-
-    // ── Cleanup: always clear the interval when the component unmounts ──
-    return () => stopPolling();
-  }, [fetchAll, refreshMetrics, clearMLData, startPolling, stopPolling]);
-
-  const runPipeline = useCallback(async () => {
+  const runPipeline = useCallback(async (attachToActiveRun = false) => {
     setLoadState("loading");
     setError(null);
     stopPolling();
     clearMLData();
     try {
-      // Kick off the background pipeline run (returns immediately)
-      await apiRunPipeline();
+      // If another tab/session already started training, attach to that run.
+      // The backend also treats duplicate start requests as idempotent.
+      const currentStatus = await apiGetPipelineStatus();
+      setHasUploadedCsv(currentStatus.has_uploaded_csv);
+      if (!currentStatus.is_training &&
+          (!attachToActiveRun || !(currentStatus.has_cache || currentStatus.ready))) {
+        await apiRunPipeline();
+      }
 
       // Poll /api/pipeline/status every 2s until training finishes
       await new Promise<void>((resolve, reject) => {
@@ -234,8 +203,44 @@ export function useMLData(): MLDataState {
     }
   }, [fetchAll, refreshMetrics, startPolling, stopPolling, clearMLData]);
 
+  // ── On mount: restore cached data or reattach to an active training run. ──
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const status = await apiGetPipelineStatus();
+        setHasUploadedCsv(status.has_uploaded_csv);
+
+        if (status.is_training) {
+          setLoadState("loading");
+          setPipelineReady(false);
+          stopPolling();
+          clearMLData();
+          await runPipeline(true);
+        } else if (status.has_cache || status.ready) {
+          setPipelineReady(true);
+          await fetchAll();
+          await refreshMetrics();
+          startPolling(false);
+        } else {
+          stopPolling();
+          clearMLData();
+          setPipelineReady(false);
+          setLoadState("idle");
+        }
+      } catch {
+        setPipelineReady(false);
+        setHasUploadedCsv(false);
+        setLoadState("idle");
+      }
+    };
+
+    checkStatus();
+    return () => stopPolling();
+  }, [fetchAll, refreshMetrics, clearMLData, startPolling, stopPolling, runPipeline]);
+
   const refreshFromBackend = useCallback(async () => {
     const status = await apiGetPipelineStatus();
+    setHasUploadedCsv(status.has_uploaded_csv);
     if (status.has_cache || status.ready) {
       setPipelineReady(true);
       await fetchAll();

@@ -42,7 +42,7 @@ interface CsvContextType {
   analytics: AnalyticsResult | null;
   status: "idle" | "uploading" | "analyzing" | "ready" | "error";
   error: string | null;
-  uploadCsv: (file: File) => void;
+  uploadCsv: (file: File) => Promise<void>;
   runAnalytics: (dateFrom?: Date | null, dateTo?: Date | null) => void;
   clearData: () => void;
   autoRefresh: boolean;
@@ -290,18 +290,18 @@ export const CsvProvider = ({ children }: { children: ReactNode }) => {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const columnsRef = useRef<string[]>([]);
 
-  const uploadCsv = useCallback((file: File) => {
+  const uploadCsv = useCallback((file: File): Promise<void> => {
     if (!file.name.endsWith(".csv")) {
       setError("Please upload a .csv file");
       setStatus("error");
-      return;
+      return Promise.reject(new Error("Please upload a .csv file"));
     }
     setStatus("uploading");
     setError(null);
     setFileName(file.name);
     setAnalytics(null);
 
-    Papa.parse(file, {
+    return new Promise<void>((resolve, reject) => Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       dynamicTyping: false,
@@ -309,6 +309,7 @@ export const CsvProvider = ({ children }: { children: ReactNode }) => {
         if (results.errors.length > 0 && results.data.length === 0) {
           setError(`Parse error: ${results.errors[0].message}`);
           setStatus("error");
+          reject(new Error(`Parse error: ${results.errors[0].message}`));
           return;
         }
 
@@ -337,16 +338,22 @@ export const CsvProvider = ({ children }: { children: ReactNode }) => {
           console.log("✓ CSV uploaded to backend");
         } catch (err) {
           console.warn("Backend upload failed:", err);
-          // Continue with local analysis even if backend upload fails
+          const message = err instanceof Error ? err.message : "Backend upload failed";
+          setError(`CSV parsed locally, but backend upload failed: ${message}`);
+          setStatus("error");
+          reject(err instanceof Error ? err : new Error(message));
+          return;
         }
         
         setStatus("ready");
+        resolve();
       },
       error: (err) => {
         setError(err.message);
         setStatus("error");
+        reject(err);
       },
-    });
+    }));
   }, []);
 
   const runAnalytics = useCallback(async (dateFrom?: Date | null, dateTo?: Date | null) => {

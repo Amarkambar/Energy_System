@@ -731,7 +731,12 @@ def run_pipeline_endpoint(state=Depends(_get_user_pipeline_state)):
 
     with state["lock"]:
         if state["training"]:
-            raise HTTPException(409, "Your pipeline is already running")
+            # Make pipeline start idempotent. A second tab/click should attach
+            # to the active run and poll its status instead of surfacing 409.
+            return {
+                "status": "already_running",
+                "message": "Your pipeline is already running. Poll /api/pipeline/status for progress.",
+            }
         upload_path = state["uploaded_path"]
         uploaded_name = state["uploaded_name"]
         data_source = state["source"]

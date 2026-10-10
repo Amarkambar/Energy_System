@@ -32,7 +32,7 @@ const DragDropOverlay = ({ children }: { children: React.ReactNode }) => {
 
     const file = e.dataTransfer?.files?.[0];
     if (file && file.name.endsWith(".csv")) {
-      uploadCsv(file);
+      void uploadCsv(file).catch(() => {});
     }
   }, [uploadCsv]);
 
