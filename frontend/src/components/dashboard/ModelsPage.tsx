@@ -76,9 +76,10 @@ const ModelsPage = () => {
   const [activeTab, setActiveTab] = useState<ViewTab>("models");
   const [metricsLoading, setMetricsLoading] = useState(false);
 
-  // Fetch metrics when tab changes, data becomes ready, or pipeline completes
+  // Backend metrics are only available after ML training has completed. Local
+  // CSV analytics alone must not trigger requests that return 503 while training.
   useEffect(() => {
-    if (hasData && (activeTab === "metrics" || activeTab === "comparison")) {
+    if (pipelineReady && hasData && (activeTab === "metrics" || activeTab === "comparison")) {
       setMetricsLoading(true);
       refreshMetrics().finally(() => setMetricsLoading(false));
     }
