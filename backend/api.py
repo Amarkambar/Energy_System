@@ -640,7 +640,11 @@ def _load_pipeline_from_disk(paths: dict[str, str]) -> dict:
 def _invalidate_pipeline_cache(state: dict) -> None:
     """Remove only this account's stale analytics."""
     state["cache"].clear()
-    for cache_path in state["paths"].values():
+    # A new upload invalidates derived results, but the source CSV must remain
+    # available for the pipeline. clear_pipeline_cache removes it explicitly.
+    for path_name, cache_path in state["paths"].items():
+        if path_name == "upload":
+            continue
         if os.path.isfile(cache_path):
             pathlib.Path(cache_path).unlink(missing_ok=True)
 
