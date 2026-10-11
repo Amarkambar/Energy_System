@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 import hashlib
@@ -37,9 +37,8 @@ from email.mime.multipart import MIMEMultipart
 from typing import Optional
 from dotenv import load_dotenv
 import logging
-import shutil
 import pathlib
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 
@@ -52,7 +51,7 @@ except ImportError:
     _pwd_context = None
     _BCRYPT_AVAILABLE = False
     logger_import = logging.getLogger(__name__)
-    logger_import.warning("[Security] passlib not installed — falling back to SHA-256. Run: pip install passlib[bcrypt]")
+    logger_import.error("[Security] passlib is unavailable; password operations will fail closed")
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +67,17 @@ else:
 
 # ── SMTP Configuration Validation ─────────────────────────────────────────────
 _SMTP_READY = False
+_DEPLOYED = any(os.getenv(name) for name in ("VERCEL", "RENDER", "RAILWAY_ENVIRONMENT"))
+_configured_cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+_has_public_frontend_origin = any(
+    (urlsplit(origin).hostname or "").lower() not in ("localhost", "127.0.0.1", "::1")
+    for origin in _configured_cors_origins
+)
+_PRODUCTION = (
+    os.getenv("APP_ENV", "development").strip().lower() == "production"
+    or _DEPLOYED
+    or _has_public_frontend_origin
+)
 
 def _validate_smtp_config() -> dict:
     global _SMTP_READY
@@ -106,6 +116,18 @@ def _validate_smtp_config() -> dict:
 
 # ── MongoDB ────────────────────────────────────────────────────────────────────
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+_mongo_uri_parts = urlsplit(MONGO_URI)
+if _PRODUCTION and (
+    MONGO_URI == "mongodb://localhost:27017"
+    or not _mongo_uri_parts.hostname
+    or not _mongo_uri_parts.username
+    or not _mongo_uri_parts.password
+):
+    raise RuntimeError("Production requires an authenticated MONGO_URI; do not use an unauthenticated database")
+if (_PRODUCTION and not MONGO_URI.lower().startswith("mongodb+srv://")
+        and _mongo_uri_parts.hostname not in ("localhost", "127.0.0.1", "::1")
+        and "tls=true" not in MONGO_URI.lower()):
+    raise RuntimeError("Production MongoDB connections outside localhost must enable TLS")
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
 db = client["energy_analytics"]
 users_col = db["users"]
@@ -113,7 +135,6 @@ reset_tokens_col = db["password_reset_tokens"]
 _mongo_ready = False
 
 # ── Settings ───────────────────────────────────────────────────────────────────
-_SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "settings.json")
 _DEFAULT_SETTINGS = {
     "alert_consumption_threshold": 500,
     "alert_anomaly_score_threshold": 0.7,
@@ -123,30 +144,41 @@ _DEFAULT_SETTINGS = {
     "smtp_enabled": False,
 }
 
-def _load_settings() -> dict:
-    if os.path.exists(_SETTINGS_PATH):
+def _settings_path(user: dict) -> str:
+    # Never store account preferences in a shared file: that leaked one user's
+    # notification address and let every account change everyone else's rules.
+    key = _workspace_key(user)
+    path = os.path.join(_USER_DATA_ROOT, key, "settings.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
+
+def _load_settings(user: dict) -> dict:
+    path = _settings_path(user)
+    if os.path.exists(path):
         try:
-            with open(_SETTINGS_PATH) as f:
+            with open(path, encoding="utf-8") as f:
                 s = json.load(f)
             return {**_DEFAULT_SETTINGS, **s}
         except Exception:
             pass
     return dict(_DEFAULT_SETTINGS)
 
-def _save_settings(data: dict):
-    merged = {**_load_settings(), **data}
-    with open(_SETTINGS_PATH, "w") as f:
+def _save_settings(data: dict, user: dict):
+    path = _settings_path(user)
+    merged = {**_load_settings(user), **data}
+    temp_path = path + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(merged, f, indent=2)
+    os.replace(temp_path, path)
 
 # ── JWT-like token ─────────────────────────────────────────────────────────────
 SECRET = os.getenv("JWT_SECRET", "").strip()
-_PRODUCTION = os.getenv("APP_ENV", "development").strip().lower() == "production"
 _WEAK_SECRET_VALUES = {
     "change-me-in-production-secret-key",
     "change-me-to-a-long-random-string",
     "development-only-insecure-secret-do-not-deploy",
 }
-if _PRODUCTION and (len(SECRET) < 32 or SECRET in _WEAK_SECRET_VALUES or SECRET.lower().startswith(("change-me", "your-"))):
+if _PRODUCTION and (len(SECRET.encode("utf-8")) < 32 or SECRET in _WEAK_SECRET_VALUES or SECRET.lower().startswith(("change-me", "your-"))):
     raise RuntimeError("Production requires a strong JWT_SECRET of at least 32 characters")
 if not SECRET:
     SECRET = "development-only-insecure-secret-do-not-deploy"
@@ -155,8 +187,9 @@ if not SECRET:
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
-def create_token(email: str, name: str) -> str:
+def create_token(email: str, name: str, token_version: int = 0) -> str:
     payload = json.dumps({"email": email, "name": name,
+                          "token_version": token_version,
                           "exp": int(time.time()) + 86400 * 7}).encode()
     sig = hmac.new(SECRET.encode(), _b64(payload).encode(), hashlib.sha256).hexdigest()
     return f"{_b64(payload)}.{sig}"
@@ -243,24 +276,40 @@ app = FastAPI(
     title="Energy Diagnostics API",
     version="2.0.0",
     description="AI-powered industrial energy monitoring, anomaly detection, and forecasting API.",
+    debug=False,
+    docs_url=None if _PRODUCTION else "/docs",
+    redoc_url=None if _PRODUCTION else "/redoc",
+    openapi_url=None if _PRODUCTION else "/openapi.json",
     lifespan=_lifespan,
 )
 
 # ── CORS: configure explicit origins in production.
 _cors_origins_raw = os.getenv("CORS_ORIGINS", "")
-if not _cors_origins_raw.strip():
+if not _cors_origins_raw.strip() and not _PRODUCTION:
     _cors_origins_raw = "http://localhost:5173,http://localhost:3000"
 _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
 _allow_all_origins = "*" in _cors_origins
-if _PRODUCTION and (not _cors_origins or _allow_all_origins):
+_invalid_origins = []
+for _origin in _cors_origins:
+    _parsed_origin = urlsplit(_origin)
+    if (_parsed_origin.scheme not in ("http", "https") or not _parsed_origin.netloc
+            or _parsed_origin.path or _parsed_origin.query or _parsed_origin.fragment
+            or _parsed_origin.username or _parsed_origin.password):
+        _invalid_origins.append(_origin)
+    if _PRODUCTION and _parsed_origin.hostname in ("localhost", "127.0.0.1", "::1"):
+        _invalid_origins.append(_origin)
+if _PRODUCTION and (not _cors_origins or _allow_all_origins or _invalid_origins):
     raise RuntimeError("Production requires CORS_ORIGINS with explicit trusted frontend origins; wildcards are forbidden")
+if _invalid_origins:
+    raise RuntimeError("CORS_ORIGINS contains an invalid origin")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if _allow_all_origins else _cors_origins,
-    allow_credentials=not _allow_all_origins,  # credentials=True incompatible with allow_origins=["*"]
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,  # API auth uses Bearer tokens; browser cookies are not needed.
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    max_age=600,
 )
 
 
@@ -278,41 +327,68 @@ if os.path.isdir(_STATIC_DIR):
 @app.middleware("http")
 async def no_cache_middleware(request: Request, call_next):
     response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; font-src 'self' data:; "
+        "connect-src 'self' https: http://localhost:* ws://localhost:*; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    )
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-site"
+    if request.headers.get("x-forwarded-proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"]         = "no-cache"
         response.headers["Expires"]        = "0"
-        # ── Security headers (fixes OWASP A05 / Bandit warnings) ────────────
-        response.headers["X-Content-Type-Options"]  = "nosniff"
-        response.headers["X-Frame-Options"]         = "DENY"
-        response.headers["X-XSS-Protection"]        = "1; mode=block"
-        response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=(), camera=()"
-        # HSTS only on HTTPS (Render/Vercel enforce HTTPS in prod)
-        if request.headers.get("x-forwarded-proto") == "https":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 # ── In-memory rate limiter for auth endpoints ──────────────────────────────
 import collections as _col, threading as _rlt
 _rate_store: dict = _col.defaultdict(list)   # ip -> [timestamps]
+_rate_windows: dict[str, int] = {}
 _rate_lock  = _rlt.Lock()
 _RATE_LIMIT  = int(os.getenv("AUTH_RATE_LIMIT",  "10"))   # max requests
 _RATE_WINDOW = int(os.getenv("AUTH_RATE_WINDOW", "60"))   # per N seconds
 
-def _check_rate_limit(request: Request):
-    """Raises 429 if caller IP exceeded AUTH_RATE_LIMIT reqs in AUTH_RATE_WINDOW seconds."""
+def _check_rate_limit(
+    request: Request,
+    scope: str = "auth",
+    limit: int | None = None,
+    window: int | None = None,
+    identity: str | None = None,
+):
+    """Process-local safety limit; use a shared store when deploying multiple workers."""
     ip = (request.client.host if request.client else "unknown")
+    key = f"{scope}:{identity or ip}"
+    max_requests = limit or _RATE_LIMIT
+    period = window or _RATE_WINDOW
     now = time.time()
     with _rate_lock:
-        _rate_store[ip] = [t for t in _rate_store[ip] if now - t < _RATE_WINDOW]
-        if len(_rate_store[ip]) >= _RATE_LIMIT:
+        if len(_rate_store) > 10_000:
+            for old_key in list(_rate_store):
+                old_period = _rate_windows.get(old_key, period)
+                live = [stamp for stamp in _rate_store[old_key] if now - stamp < old_period]
+                if live:
+                    _rate_store[old_key] = live
+                else:
+                    _rate_store.pop(old_key, None)
+                    _rate_windows.pop(old_key, None)
+        _rate_store[key] = [t for t in _rate_store[key] if now - t < period]
+        _rate_windows[key] = period
+        if len(_rate_store[key]) >= max_requests:
             raise HTTPException(
                 status_code=429,
-                detail=f"Too many requests. Limit: {_RATE_LIMIT} per {_RATE_WINDOW}s.",
-                headers={"Retry-After": str(_RATE_WINDOW)},
+                detail=f"Too many requests. Limit: {max_requests} per {period}s.",
+                headers={"Retry-After": str(period)},
             )
-        _rate_store[ip].append(now)
+        _rate_store[key].append(now)
 
 
 security = HTTPBearer(auto_error=False)
@@ -320,7 +396,11 @@ security = HTTPBearer(auto_error=False)
 def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return verify_token(credentials.credentials)
+    token_user = verify_token(credentials.credentials)
+    account = users_col.find_one({"email": token_user.get("email")}, {"name": 1, "token_version": 1})
+    if (not account or account.get("token_version", 0) != token_user.get("token_version", 0)):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return {**token_user, "name": account.get("name", token_user.get("name", ""))}
 
 def _get_user_pipeline_state(user=Depends(get_current_user)) -> dict:
     """Resolve the pipeline workspace exclusively from the authenticated account."""
@@ -340,7 +420,7 @@ def _get_user_pipeline_state(user=Depends(get_current_user)) -> dict:
                 pass
             upload_exists = os.path.isfile(paths["upload"])
             state = {
-                "key": key, "workspace": workspace, "paths": paths,
+                "key": key, "user": user, "workspace": workspace, "paths": paths,
                 "lock": threading.RLock(), "cache": _load_pipeline_from_disk(paths),
                 "training": False, "error": None,
                 "uploaded_path": paths["upload"] if upload_exists else None,
@@ -352,21 +432,43 @@ def _get_user_pipeline_state(user=Depends(get_current_user)) -> dict:
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
 class RegisterRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
     email: EmailStr
-    password: str
+    password: str = Field(min_length=12, max_length=72)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(ord(char) < 32 for char in value):
+            raise ValueError("Name must contain printable characters")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def limit_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=72)
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
-    new_password: str
+    new_password: str = Field(min_length=12, max_length=72)
     token: str  # FIX: token is now required to prevent unauthenticated password resets
+
+    @field_validator("new_password")
+    @classmethod
+    def limit_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 class ThresholdSettings(BaseModel):
     alert_consumption_threshold: float = Field(default=500, gt=0, le=1_000_000)
@@ -380,8 +482,6 @@ class ThresholdSettings(BaseModel):
 @app.post("/api/auth/register")
 def register(req: RegisterRequest, request: Request):
     _check_rate_limit(request)   # rate-limit: 10 reg attempts / 60s per IP
-    if len(req.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
     try:
         users_col.insert_one({
             "name": req.name.strip(),
@@ -407,14 +507,16 @@ def login(req: LoginRequest, request: Request):
             {"email": user["email"]},
             {"$set": {"password_hash": hash_password(req.password)}}
         )
-        logger.info(f"[Auth] Upgraded password hash to bcrypt for {user['email']}")
+        logger.info("[Auth] Upgraded a legacy password hash after successful login")
 
-    token = create_token(user["email"], user["name"])
+    token = create_token(user["email"], user["name"], user.get("token_version", 0))
     return {"token": token, "user": {"email": user["email"], "name": user["name"]}}
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(req: ForgotPasswordRequest, request: Request):
     _check_rate_limit(request)
+    email_bucket = hashlib.sha256(req.email.lower().encode("utf-8")).hexdigest()
+    _check_rate_limit(request, scope="forgot_email", identity=email_bucket, limit=3, window=3600)
     user = users_col.find_one({"email": req.email.lower()})
     smtp_user = os.getenv("SMTP_USER", "").strip()
     smtp_pass = os.getenv("SMTP_PASSWORD", "").strip()
@@ -475,8 +577,6 @@ def reset_password(req: ResetPasswordRequest, request: Request):
     _check_rate_limit(request)
     # FIX: Validate reset token BEFORE updating the password.
     # Previously missing — anyone who knew an email could reset it without a token.
-    if len(req.new_password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
     entry = reset_tokens_col.find_one_and_delete({
         "token_hash": hashlib.sha256(req.token.encode()).hexdigest(),
         "email": req.email.lower(),
@@ -486,7 +586,7 @@ def reset_password(req: ResetPasswordRequest, request: Request):
         raise HTTPException(400, "Invalid or expired reset token")
     result = users_col.update_one(
         {"email": req.email.lower()},
-        {"$set": {"password_hash": hash_password(req.new_password)}}
+        {"$set": {"password_hash": hash_password(req.new_password)}, "$inc": {"token_version": 1}}
     )
     if result.matched_count == 0:
         raise HTTPException(404, "Account not found")
@@ -501,12 +601,12 @@ def me(user=Depends(get_current_user)):
 # ── Settings routes ────────────────────────────────────────────────────────────
 @app.get("/api/settings/thresholds")
 def get_thresholds(user=Depends(get_current_user)):
-    return _load_settings()
+    return _load_settings(user)
 
 @app.post("/api/settings/thresholds")
 def update_thresholds(data: ThresholdSettings, user=Depends(get_current_user)):
-    _save_settings(data.model_dump(mode="json"))
-    return {"status": "success", "settings": _load_settings()}
+    _save_settings(data.model_dump(mode="json"), user)
+    return {"status": "success", "settings": _load_settings(user)}
 
 # ── Health check ───────────────────────────────────────────────────────────────
 _start_time = time.time()
@@ -533,8 +633,6 @@ def health():
         "dependencies": {
             "mongodb": "connected" if mongo_ok else "disconnected",
             "smtp_email": "configured" if _SMTP_READY else "not_configured",
-            "pipeline_cache": "available per account",
-            "active_user_pipelines": sum(1 for s in _USER_STATES.values() if s["training"]),
         },
     }
 
@@ -552,8 +650,9 @@ def data_summary(state=Depends(_get_user_pipeline_state)):
         }
     except HTTPException:
         raise
-    except Exception as e:
-        return {"error": str(e), "message": "Pipeline not yet initialised"}
+    except Exception:
+        logger.warning("Unable to create the account data summary", exc_info=True)
+        return {"error": "unavailable", "message": "Pipeline not yet initialised"}
 
 # ══════════════════════════════════════════════════════════
 #  ML PIPELINE + MODEL ENDPOINTS
@@ -693,21 +792,36 @@ def _safe_endpoint(fn):
             raise   # preserve 503, 401, 404, etc. — never convert to 500
         except Exception as e:
             logger.error(f"[{fn.__name__}] Unexpected error: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"{fn.__name__} error: {str(e)}")
+            raise HTTPException(status_code=500, detail="The request could not be completed")
     return wrapper
 
 
 # ── CSV upload ─────────────────────────────────────────────────────────────────
 @app.post("/api/data/upload-csv")
-async def upload_csv(file: UploadFile = File(...), state=Depends(_get_user_pipeline_state)):
+async def upload_csv(request: Request, file: UploadFile = File(...), state=Depends(_get_user_pipeline_state)):
+    _check_rate_limit(request, scope="csv_upload", limit=5, window=60)
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(400, "Only CSV files are allowed")
+    max_upload_bytes = int(os.getenv("MAX_CSV_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+    if max_upload_bytes <= 0:
+        raise HTTPException(503, "CSV uploads are currently disabled")
+    if file.size is not None and file.size > max_upload_bytes:
+        raise HTTPException(413, "CSV file exceeds the configured upload limit")
     with state["lock"]:
         if state["training"]:
             raise HTTPException(409, "Cannot upload a new CSV while your pipeline is training")
         try:
-            with open(state["paths"]["upload"], "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+            upload_path = state["paths"]["upload"]
+            os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+            temp_path = upload_path + ".uploading"
+            bytes_written = 0
+            with open(temp_path, "wb") as buffer:
+                while chunk := file.file.read(1024 * 1024):
+                    bytes_written += len(chunk)
+                    if bytes_written > max_upload_bytes:
+                        raise HTTPException(413, "CSV file exceeds the configured upload limit")
+                    buffer.write(chunk)
+            os.replace(temp_path, upload_path)
             state["uploaded_path"] = state["paths"]["upload"]
             state["uploaded_name"] = pathlib.Path(file.filename or "uploaded_data.csv").name
             state["source"] = "csv"
@@ -718,20 +832,30 @@ async def upload_csv(file: UploadFile = File(...), state=Depends(_get_user_pipel
             logger.info(f"[Upload] CSV saved in account workspace {state['key']}")
             return {"status": "success", "filename": state["uploaded_name"],
                     "message": f"File '{state['uploaded_name']}' uploaded successfully"}
-        except Exception as e:
-            raise HTTPException(500, f"File upload failed: {str(e)}")
+        except HTTPException:
+            if os.path.exists(state["paths"]["upload"] + ".uploading"):
+                os.remove(state["paths"]["upload"] + ".uploading")
+            raise
+        except Exception:
+            temp_path = state["paths"]["upload"] + ".uploading"
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            logger.exception("CSV upload failed")
+            raise HTTPException(500, "CSV upload failed")
 
 
 # ── Pipeline run ───────────────────────────────────────────────────────────────
 @app.post("/api/pipeline/run")
-def run_pipeline_endpoint(state=Depends(_get_user_pipeline_state)):
+def run_pipeline_endpoint(request: Request, state=Depends(_get_user_pipeline_state)):
+    _check_rate_limit(request, scope="pipeline_run", limit=3, window=3600)
     # Pre-flight before marking this account as training.
     try:
         from data.pipeline import run_pipeline
         from models.ml_models import train_all_models, run_all_predictions
         from alerts.alerts_engine import AlertEngine, RecommendationEngine
-    except ImportError as e:
-        raise HTTPException(500, f"Required module missing: {str(e)}")
+    except ImportError:
+        logger.exception("A required pipeline module is unavailable")
+        raise HTTPException(500, "A required pipeline module is unavailable")
 
     with state["lock"]:
         if state["training"]:
@@ -776,7 +900,7 @@ def run_pipeline_endpoint(state=Depends(_get_user_pipeline_state)):
 
             models                    = train_all_models(df)
             predictions, forecast     = run_all_predictions(df, models)
-            alert_engine              = AlertEngine()
+            alert_engine              = AlertEngine(settings=_load_settings(state["user"]))
             alerts_df                 = alert_engine.check_dataframe(predictions.tail(500))
             alert_summary             = alert_engine.get_alert_summary()
             rec_engine                = RecommendationEngine()
@@ -1245,8 +1369,9 @@ def get_confusion_matrix(state=Depends(_get_user_pipeline_state)):
     data = _get_pipeline_data(state)
     try:
         from models.metrics_calculator import MetricsCalculator
-    except ImportError as e:
-        raise HTTPException(500, f"MetricsCalculator module missing: {str(e)}")
+    except ImportError:
+        logger.exception("A required metrics module is unavailable")
+        raise HTTPException(500, "A required metrics module is unavailable")
     y_true, y_pred, y_prob, classes = _get_classification_metrics_data(data)
     if y_true is None:
         return {"error": "No data available", "detail": "Could not generate classification metrics"}
@@ -1431,6 +1556,10 @@ if os.path.isdir(_STATIC_DIR) and os.path.isfile(os.path.join(_STATIC_DIR, "inde
     async def _spa_fallback(full_path: str = ""):
         # Let actual /api/* 404s propagate naturally — never catch them here
         fp = os.path.join(_STATIC_DIR, full_path)
-        if full_path and os.path.isfile(fp):
+        try:
+            within_static = os.path.commonpath([os.path.realpath(_STATIC_DIR), os.path.realpath(fp)]) == os.path.realpath(_STATIC_DIR)
+        except ValueError:
+            within_static = False
+        if within_static and full_path and os.path.isfile(fp):
             return _FileResponse(fp)
         return _FileResponse(os.path.join(_STATIC_DIR, "index.html"))

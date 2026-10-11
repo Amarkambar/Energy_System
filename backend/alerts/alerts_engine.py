@@ -1,23 +1,19 @@
 # alerts/alerts_engine.py — Real-time alerts + AI-generated recommendations
 
 import smtplib
-import json
 import time
-import os
 import schedule
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from html import escape
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import (
     ALERT_EMAIL_RECIPIENTS, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD
 )
 
-# ── Dynamic threshold loader ───────────────────────────────
-_SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "..", "data", "settings.json")
-
+# ── Safe defaults for legacy non-account-scoped callers ────
 _DEFAULT_THRESHOLDS = {
     "alert_consumption_threshold": 500,
     "alert_anomaly_score_threshold": 0.7,
@@ -26,14 +22,7 @@ _DEFAULT_THRESHOLDS = {
 }
 
 def _get_thresholds() -> dict:
-    """Read thresholds from settings.json; fall back to defaults."""
-    try:
-        if os.path.exists(_SETTINGS_PATH):
-            with open(_SETTINGS_PATH) as f:
-                s = json.load(f)
-            return {**_DEFAULT_THRESHOLDS, **s}
-    except Exception:
-        pass
+    """Return safe defaults for legacy non-account-scoped callers."""
     return dict(_DEFAULT_THRESHOLDS)
 
 
@@ -41,9 +30,9 @@ def _get_thresholds() -> dict:
 #  ALERT DEFINITIONS  (thresholds resolved at runtime)
 # ══════════════════════════════════════════════════════════
 
-def _build_alert_rules() -> dict:
+def _build_alert_rules(settings: dict | None = None) -> dict:
     """Build alert rules using current threshold settings."""
-    th = _get_thresholds()
+    th = {**_DEFAULT_THRESHOLDS, **(settings or _get_thresholds())}
     return {
         "high_consumption": {
             "condition": lambda row, t=th: row.get("consumption_kwh", 0) > t["alert_consumption_threshold"],
@@ -96,16 +85,17 @@ def _build_alert_rules() -> dict:
 # ══════════════════════════════════════════════════════════
 
 class AlertEngine:
-    def __init__(self):
+    def __init__(self, settings: dict | None = None):
         self.alert_log = []
         self.alert_cooldowns = {}  # Prevent alert spam
         self.cooldown_seconds = 300  # 5 minutes between same alerts
+        self.settings = settings
 
     def check_row(self, row: dict) -> list:
         """Evaluate all rules against a single data row"""
         triggered = []
         now = datetime.now()
-        alert_rules = _build_alert_rules()   # re-read thresholds from settings.json
+        alert_rules = _build_alert_rules(self.settings)
 
         for rule_name, rule in alert_rules.items():
             try:
@@ -214,19 +204,19 @@ class EmailNotifier:
         if critical:
             body += "<h3 style='color:red'>🔴 Critical Alerts</h3><ul>"
             for a in critical:
-                body += f"<li><b>{a['rule']}</b> — {a['message']}</li>"
+                body += f"<li><b>{escape(str(a['rule']))}</b> — {escape(str(a['message']))}</li>"
             body += "</ul>"
 
         if warnings:
             body += "<h3 style='color:orange'>🟠 Warnings</h3><ul>"
             for a in warnings:
-                body += f"<li><b>{a['rule']}</b> — {a['message']}</li>"
+                body += f"<li><b>{escape(str(a['rule']))}</b> — {escape(str(a['message']))}</li>"
             body += "</ul>"
 
         if infos:
             body += "<h3 style='color:blue'>🔵 Info</h3><ul>"
             for a in infos:
-                body += f"<li>{a['message']}</li>"
+                body += f"<li>{escape(str(a['message']))}</li>"
             body += "</ul>"
 
         body += "</body></html>"

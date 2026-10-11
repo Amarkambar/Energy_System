@@ -31,7 +31,7 @@ const ResetPasswordPage = () => {
     e.preventDefault();
     setError("");
     if (!password.trim()) { setError("Please enter a new password"); return; }
-    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (password.length < 12) { setError("Password must be at least 12 characters"); return; }
     if (password !== confirm) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {

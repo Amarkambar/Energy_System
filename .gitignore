@@ -43,6 +43,8 @@ ENV/
 backend/data/cache/
 backend/data/real/
 backend/data/uploads/
+backend/data/user_workspaces/
+backend/data/settings.json
 backend/models/saved/
 *.parquet
 *.pkl
@@ -51,6 +53,7 @@ backend/server_out.log
 
 # Environment files — block real secrets
 .env
+.env.*
 backend/.env
 frontend/.env
 frontend/.env.production
@@ -61,6 +64,14 @@ backend/.env.local
 !**/.env.example
 !**/.env.production.example
 
+# Signing keys and local secret stores
+*.pem
+*.key
+*.p12
+*.pfx
+*.secrets
+.aws/credentials
+
 # Jupyter notebooks (dev scratch files)
 *.ipynb
 
@@ -70,6 +81,8 @@ backend/data/a.txt
 # Frontend/NodeJS
 frontend/node_modules/
 frontend/dist/
+frontend/.vercel/
+backend/.vercel/
 frontend/bun.lockb
 frontend/bun.lock  # if lockfile binary or regenerated
 

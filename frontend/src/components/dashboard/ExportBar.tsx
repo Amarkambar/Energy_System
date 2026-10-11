@@ -7,7 +7,10 @@ type ExportBarProps = {
 };
 
 const escapeCsvField = (value: unknown) => {
-  const text = String(value ?? "");
+  let text = String(value ?? "");
+  // Quoting protects CSV structure; a leading apostrophe also prevents Excel
+  // from evaluating untrusted cells as formulas when a user opens the export.
+  if (/^[\u0000-\u0020]*[=+\-@]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 };
 

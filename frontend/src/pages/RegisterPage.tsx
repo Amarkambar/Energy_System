@@ -4,7 +4,7 @@ import { apiRegister, saveSession } from "@/lib/api";
 
 const PasswordStrength = ({ password }: { password: string }) => {
   const checks = [
-    password.length >= 6,
+    password.length >= 12,
     /[A-Z]/.test(password),
     /[0-9]/.test(password),
     /[^A-Za-z0-9]/.test(password),
@@ -44,7 +44,7 @@ const RegisterPage = () => {
     e.preventDefault();
     setError("");
     if (!name.trim() || !email.trim() || !password.trim()) { setError("Please fill in all fields"); return; }
-    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (password.length < 12) { setError("Password must be at least 12 characters"); return; }
     if (password !== confirm) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {
@@ -120,7 +120,7 @@ const RegisterPage = () => {
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min. 6 characters"
+                placeholder="Min. 12 characters"
                   className={`${inputClass} pr-12`}
                 />
                 <button
