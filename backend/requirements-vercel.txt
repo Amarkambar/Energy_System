@@ -9,7 +9,7 @@ uvicorn>=0.29.0
 mangum>=0.17.0
 pydantic[email]>=2.6.0
 pydantic-settings>=2.2.0
-python-multipart>=0.0.9
+python-multipart>=0.0.32
 starlette>=0.37.0
 
 # ── Database ──────────────────────────────────────────────────────────────────
