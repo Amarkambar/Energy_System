@@ -10,7 +10,8 @@ const escapeCsvField = (value: unknown) => {
   let text = String(value ?? "");
   // Quoting protects CSV structure; a leading apostrophe also prevents Excel
   // from evaluating untrusted cells as formulas when a user opens the export.
-  if (/^[\u0000-\u0020]*[=+\-@]/.test(text)) text = `'${text}`;
+  const firstSignificantChar = text.split("").find((char) => char.charCodeAt(0) > 0x20);
+  if (firstSignificantChar && /^[=+\-@]$/.test(firstSignificantChar)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 };
 
