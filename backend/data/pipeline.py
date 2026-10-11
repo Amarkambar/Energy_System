@@ -466,28 +466,10 @@ def run_pipeline(
         df = generate_synthetic_data(n_hours=8807)   # +47 to compensate for lag-feature NaN trim
 
 
-    # ── Enforce minimum 8760 rows (1 full year of hourly data) ────────────────
-    MIN_ROWS = 8760
-    if len(df) < MIN_ROWS:
-        shortfall = MIN_ROWS - len(df)
-        print(f"[Pipeline] Only {len(df)} rows — need {MIN_ROWS}. "
-              f"Padding with {shortfall} synthetic rows...")
-        synth = generate_synthetic_data(n_hours=MIN_ROWS)
-        # Shift synthetic timestamps to start right after the real data ends
-        if "timestamp" in df.columns and "timestamp" in synth.columns:
-            try:
-                last_ts = pd.to_datetime(df["timestamp"]).max()
-                synth["timestamp"] = pd.date_range(
-                    start=last_ts + pd.Timedelta(hours=1),
-                    periods=MIN_ROWS, freq="h"
-                )
-            except Exception:
-                pass
-        # Keep only the shortfall rows from synthetic and append
-        synth_tail = synth.tail(shortfall).copy()
-        synth_tail["data_source"] = "synthetic_pad"
-        df = pd.concat([df, synth_tail], ignore_index=True)
-        print(f"[Pipeline] Padded to {len(df)} rows total")
+    # Preserve the uploaded dataset as-is. Synthetic padding contaminates both
+    # model fitting and reported validation metrics, so it is only generated
+    # above when there is no input dataset at all.
+    print(f"[Pipeline] Training on {len(df)} uploaded rows; no synthetic padding applied.")
 
     # ── Step 2: Clean ─────────────────────────────────────────────────────────
     if "data_source" not in df.columns or df["data_source"].iloc[0] != "real_sensor":

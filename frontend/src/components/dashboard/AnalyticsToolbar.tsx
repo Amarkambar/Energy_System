@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const AnalyticsToolbar = () => {
   const { fileName, status, error, uploadCsv, runAnalytics, clearData, autoRefresh, setAutoRefresh, rawData } = useCsvData();
-  const { runPipeline, pipelineReady, hasUploadedCsv, loadState, refreshFromBackend } = useMlContext();
+  const { runPipeline, pipelineReady, hasUploadedCsv, isTraining, loadState, refreshFromBackend } = useMlContext();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,11 +132,16 @@ const AnalyticsToolbar = () => {
         <div className="flex items-center gap-4">
           <input id="analytics-csv-upload" name="dataset-file" ref={inputRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
           <button
-            onClick={() => inputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-[12px] font-head font-semibold text-foreground hover:bg-card hover:border-border2 transition-all cursor-pointer"
+            onClick={() => !isTraining && inputRef.current?.click()}
+            disabled={isTraining}
+            title={isTraining ? "Wait for ML training to finish before replacing the dataset" : "Upload CSV"}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-[12px] font-head font-semibold transition-all",
+              isTraining ? "text-muted-foreground/60 cursor-not-allowed opacity-60" : "text-foreground hover:bg-card hover:border-border2 cursor-pointer"
+            )}
           >
             <Upload className="w-3.5 h-3.5" />
-            Upload CSV
+            {isTraining ? "Training in progress" : "Upload CSV"}
           </button>
 
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-inter">

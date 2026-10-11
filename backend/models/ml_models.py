@@ -138,20 +138,8 @@ class AnomalyDetector:
     def explain(self, df: pd.DataFrame, n_samples: int = 100) -> pd.DataFrame:
         """Return SHAP feature importance. Returns empty DataFrame if shap not available."""
         if not _SHAP_AVAILABLE or self.explainer is None:
-            # Fallback: use sklearn feature_importances_ approximation
-            try:
-                importance_vals = np.abs(
-                    self.iso_forest.feature_importances_
-                    if hasattr(self.iso_forest, 'feature_importances_')
-                    else np.ones(len(self.feature_cols)) / len(self.feature_cols)
-                )
-                return pd.DataFrame({
-                    "feature": self.feature_cols,
-                    "shap_mean": importance_vals / importance_vals.sum()
-                }).sort_values("shap_mean", ascending=False)
-            except Exception:
-                return pd.DataFrame({"feature": self.feature_cols,
-                                     "shap_mean": [0.0] * len(self.feature_cols)})
+            # Do not fabricate uniform feature importances when SHAP is unavailable.
+            return pd.DataFrame(columns=["feature", "shap_mean"])
         X = self.scaler.transform(df[self.feature_cols].fillna(0))[:n_samples]
         shap_vals = self.explainer.shap_values(X)
         importance = pd.DataFrame({
@@ -172,6 +160,7 @@ class EnergyForecaster:
         self.model = None
         self.scaler = StandardScaler()
         self.feature_cols = None
+        self.validation_metrics = None
 
     def _get_forecast_features(self, df: pd.DataFrame) -> list:
         lag_cols     = [c for c in df.columns if "lag" in c]
@@ -229,6 +218,13 @@ class EnergyForecaster:
         from sklearn.metrics import r2_score
         train_r2 = r2_score(y_train, train_pred)
         val_r2   = r2_score(y_val,   val_pred)
+        self.validation_metrics = {
+            "mae": float(val_mae),
+            "mape": float(val_mape),
+            "r2": float(val_r2),
+            "residual_std": float(np.std(y_val - val_pred)),
+            "validation_rows": int(len(y_val)),
+        }
 
         print(f"[Forecaster] Train MAE={train_mae:.2f} | Val MAE={val_mae:.2f} kWh | "
               f"Val MAPE={val_mape:.1f}%")
@@ -247,38 +243,71 @@ class EnergyForecaster:
         return self.model.predict(X)
 
     def forecast_next_n_hours(self, df: pd.DataFrame, n: int = 24) -> pd.DataFrame:
-        """Forecast energy consumption for the next N hours"""
-        last_row   = df.iloc[-1]
-        last_time  = last_row["timestamp"]
-        future_times = pd.date_range(start=last_time + pd.Timedelta(hours=1), periods=n, freq="H")
+        """Generate recursive forecasts using previous predictions for lag features."""
+        if self.model is None or not self.feature_cols:
+            raise ValueError("Forecaster must be trained before forecasting")
+        if df.empty or "timestamp" not in df or "consumption_kwh" not in df:
+            raise ValueError("Forecasting requires timestamped consumption history")
 
-        # Build future feature rows using last known values
-        future_rows = []
+        history = pd.to_numeric(df["consumption_kwh"], errors="coerce").dropna().astype(float).tolist()
+        if not history:
+            raise ValueError("Forecasting requires at least one valid consumption reading")
+        last_row = df.iloc[-1]
+        last_time = pd.to_datetime(last_row["timestamp"])
+        future_times = pd.date_range(start=last_time + pd.Timedelta(hours=1), periods=n, freq="h")
+        forecast_rows = []
+        forecast_values = []
+
         for t in future_times:
             row = {
-                "timestamp":   t,
-                "hour":        t.hour,
+                "timestamp": t,
+                "hour": t.hour,
                 "day_of_week": t.dayofweek,
-                "month":       t.month,
-                "is_weekend":  int(t.dayofweek >= 5),
-                "is_peak_hour": int(t.hour in range(9, 21)),
-                "hour_sin":    np.sin(2 * np.pi * t.hour / 24),
-                "hour_cos":    np.cos(2 * np.pi * t.hour / 24),
-                "month_sin":   np.sin(2 * np.pi * t.month / 12),
-                "month_cos":   np.cos(2 * np.pi * t.month / 12),
+                "month": t.month,
+                "is_weekend": int(t.dayofweek >= 5),
+                "is_peak_hour": int(t.hour in (7, 8, 9, 17, 18, 19, 20)),
+                "hour_sin": np.sin(2 * np.pi * t.hour / 24),
+                "hour_cos": np.cos(2 * np.pi * t.hour / 24),
+                "month_sin": np.sin(2 * np.pi * t.month / 12),
+                "month_cos": np.cos(2 * np.pi * t.month / 12),
                 "temperature": last_row.get("temperature", 25),
-                "humidity":    last_row.get("humidity", 60),
+                "humidity": last_row.get("humidity", 60),
             }
-            # Use last known lag/rolling as approximation
             for col in self.feature_cols:
-                if col not in row:
+                if col in row:
+                    continue
+                if "_lag_" in col and col.endswith("h"):
+                    lag = int(col.rsplit("_", 1)[1][:-1])
+                    row[col] = history[-lag] if len(history) >= lag else history[0]
+                elif "_roll_" in col and col.endswith("h"):
+                    operation, window_text = col.rsplit("_", 1)
+                    window = int(window_text[:-1])
+                    values = np.asarray(history[-window:], dtype=float)
+                    if operation.endswith("mean"):
+                        row[col] = float(values.mean())
+                    elif operation.endswith("std"):
+                        row[col] = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+                    elif operation.endswith("max"):
+                        row[col] = float(values.max())
+                    else:
+                        row[col] = last_row.get(col, 0)
+                else:
                     row[col] = last_row.get(col, 0)
-            future_rows.append(row)
 
-        future_df = pd.DataFrame(future_rows)
-        future_df["forecast_kwh"] = self.predict(future_df)
-        future_df["lower_bound"]  = future_df["forecast_kwh"] * 0.92
-        future_df["upper_bound"]  = future_df["forecast_kwh"] * 1.08
+            one_row = pd.DataFrame([row])
+            predicted = max(0.0, float(self.predict(one_row)[0]))
+            history.append(predicted)
+            forecast_values.append(predicted)
+            forecast_rows.append(row)
+
+        residual_std = float((self.validation_metrics or {}).get("residual_std", 0.0))
+        # This interval is based on validation residual spread; it is an estimate,
+        # not a calibrated probabilistic confidence interval.
+        margin = 1.96 * residual_std
+        future_df = pd.DataFrame(forecast_rows)
+        future_df["forecast_kwh"] = forecast_values
+        future_df["lower_bound"] = np.maximum(0, future_df["forecast_kwh"] - margin)
+        future_df["upper_bound"] = future_df["forecast_kwh"] + margin
         return future_df[["timestamp", "forecast_kwh", "lower_bound", "upper_bound"]]
 
 
@@ -312,6 +341,8 @@ class MaintenancePredictor:
         self.classes = ["healthy", "warning", "critical"]
         self._cv_score: float | None = None
         self._classes_used: list = []
+        self._evaluation: dict | None = None
+        self._label_source = "rule_generated"
 
     # ── Feature selection ──────────────────────────────────
     _MAINT_FEATURE_CANDIDATES = [
@@ -381,6 +412,21 @@ class MaintenancePredictor:
 
         if label_col and label_col in df.columns:
             y = df[label_col].copy()
+            self._label_source = f"uploaded:{label_col}"
+        elif "maintenance_status" in df.columns:
+            label_map = {
+                "normal": "healthy", "healthy": "healthy",
+                "scheduled": "warning", "warning": "warning",
+                "required": "critical", "critical": "critical",
+                "failed": "critical", "failure": "critical",
+            }
+            source_labels = df["maintenance_status"].astype(str).str.strip().str.lower()
+            mapped_labels = source_labels.map(label_map)
+            if mapped_labels.notna().all():
+                y = mapped_labels
+                self._label_source = "uploaded:maintenance_status"
+            else:
+                y = self._create_maintenance_labels(df)
         else:
             y = self._create_maintenance_labels(df)
 
@@ -404,8 +450,10 @@ class MaintenancePredictor:
               f"depth={self.model.max_depth}, "
               f"estimators={self.model.n_estimators}")
 
-        # ── Scale ──────────────────────────────────────────
-        X     = self.scaler.fit_transform(df[self.feature_cols].fillna(0))
+        # ── Split before fitting transforms to keep holdout evaluation clean ──
+        from sklearn.base import clone
+        from sklearn.pipeline import make_pipeline
+        X = df[self.feature_cols].fillna(0).values
         y_arr = y.values
 
         # ── Cross-validation ──────────────────────────────
@@ -413,7 +461,7 @@ class MaintenancePredictor:
         n_folds = max(2, min(5, minority_count))
         skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
         cv_scores = cross_val_score(
-            self.model, X, y_arr,
+            make_pipeline(StandardScaler(), clone(self.model)), X, y_arr,
             cv=skf, scoring="f1_weighted", n_jobs=-1
         )
         self._cv_score = float(cv_scores.mean())
@@ -421,18 +469,30 @@ class MaintenancePredictor:
               f"{self._cv_score:.3f} ± {cv_scores.std():.3f}")
 
         # ── Hold-out evaluation ────────────────────────────
-        X_train, X_test, y_train, y_test = train_test_split(
+        X_train_raw, X_test_raw, y_train, y_test = train_test_split(
             X, y_arr, test_size=0.2, random_state=42, stratify=y_arr
         )
-        self.model.fit(X_train, y_train)
-        train_pred = self.model.predict(X_train)
-        test_pred  = self.model.predict(X_test)
+        eval_scaler = StandardScaler().fit(X_train_raw)
+        X_train = eval_scaler.transform(X_train_raw)
+        X_test = eval_scaler.transform(X_test_raw)
+        eval_model = clone(self.model).fit(X_train, y_train)
+        train_pred = eval_model.predict(X_train)
+        test_pred = eval_model.predict(X_test)
 
         from sklearn.metrics import accuracy_score, f1_score
         train_acc = accuracy_score(y_train, train_pred)
         test_acc  = accuracy_score(y_test,  test_pred)
         train_f1  = f1_score(y_train, train_pred, average="weighted", zero_division=0)
         test_f1   = f1_score(y_test,  test_pred,  average="weighted", zero_division=0)
+        self._evaluation = {
+            "y_true": y_test,
+            "y_pred": test_pred,
+            "y_prob": eval_model.predict_proba(X_test),
+            "classes": eval_model.classes_,
+            "accuracy": float(test_acc),
+            "f1_weighted": float(test_f1),
+            "source": self._label_source,
+        }
 
         print(f"[Maintenance] Train Acc={train_acc:.3f} | Test Acc={test_acc:.3f}")
         print(f"[Maintenance] Train F1={train_f1:.3f}  | Test F1={test_f1:.3f}")
@@ -452,7 +512,8 @@ class MaintenancePredictor:
         print(f"[Maintenance] Features used ({len(self.feature_cols)}): {self.feature_cols}")
 
         # ── Re-fit on ALL data for production ─────────────
-        self.model.fit(X, y_arr)
+        self.scaler.fit(X)
+        self.model.fit(self.scaler.transform(X), y_arr)
         print(f"[Maintenance] ✅ Final model re-fitted on all {n_samples} rows.")
 
         save_model(self, MAINT_MODEL_PATH)

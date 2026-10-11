@@ -27,6 +27,7 @@ export type LoadState = "idle" | "loading" | "ready" | "error";
 
 export interface MLDataState {
   pipelineReady: boolean;
+  isTraining: boolean;
   hasUploadedCsv: boolean;
   loadState: LoadState;
   error: string | null;
@@ -58,6 +59,12 @@ export interface MLDataState {
 
 export function useMLData(): MLDataState {
   const [pipelineReady, setPipelineReady] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
+  const isTrainingRef = useRef(false);
+  const updateTraining = useCallback((training: boolean) => {
+    isTrainingRef.current = training;
+    setIsTraining(training);
+  }, []);
   const [hasUploadedCsv, setHasUploadedCsv] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +99,7 @@ export function useMLData(): MLDataState {
   }, []);
 
   const fetchAll = useCallback(async () => {
+    if (isTrainingRef.current) return;
     setLoadState("loading");
     setError(null);
     try {
@@ -115,6 +123,7 @@ export function useMLData(): MLDataState {
   }, []);
 
   const refreshMetrics = useCallback(async () => {
+    if (isTrainingRef.current) return;
     try {
       const [cm, roc, pr, comp, fi] = await Promise.all([
         apiConfusionMatrix().catch(() => null),
@@ -162,10 +171,12 @@ export function useMLData(): MLDataState {
       // If another tab/session already started training, attach to that run.
       // The backend also treats duplicate start requests as idempotent.
       const currentStatus = await apiGetPipelineStatus();
+      updateTraining(currentStatus.is_training);
       setHasUploadedCsv(currentStatus.has_uploaded_csv);
       if (!currentStatus.is_training &&
           (!attachToActiveRun || !(currentStatus.has_cache || currentStatus.ready))) {
         await apiRunPipeline();
+        updateTraining(true);
       }
 
       // Poll /api/pipeline/status every 2s until training finishes
@@ -173,6 +184,7 @@ export function useMLData(): MLDataState {
         const poll = setInterval(async () => {
           try {
             const status = await apiGetPipelineStatus();
+            updateTraining(status.is_training);
             setHasUploadedCsv(status.has_uploaded_csv);
             if (!status.is_training && status.status === "error") {
               clearInterval(poll);
@@ -194,20 +206,23 @@ export function useMLData(): MLDataState {
       });
 
       setPipelineReady(true);
+      updateTraining(false);
       await fetchAll();
       await refreshMetrics();
       startPolling(false); // pipeline just finished — use slow 30s polling
     } catch (e) {
+      updateTraining(false);
       setError(e instanceof Error ? e.message : "Pipeline run failed");
       setLoadState("error");
     }
-  }, [fetchAll, refreshMetrics, startPolling, stopPolling, clearMLData]);
+  }, [fetchAll, refreshMetrics, startPolling, stopPolling, clearMLData, updateTraining]);
 
   // ── On mount: restore cached data or reattach to an active training run. ──
   useEffect(() => {
     const checkStatus = async () => {
       try {
         const status = await apiGetPipelineStatus();
+        updateTraining(status.is_training);
         setHasUploadedCsv(status.has_uploaded_csv);
 
         if (status.is_training) {
@@ -228,6 +243,7 @@ export function useMLData(): MLDataState {
           setLoadState("idle");
         }
       } catch {
+        updateTraining(false);
         setPipelineReady(false);
         setHasUploadedCsv(false);
         setLoadState("idle");
@@ -236,18 +252,20 @@ export function useMLData(): MLDataState {
 
     checkStatus();
     return () => stopPolling();
-  }, [fetchAll, refreshMetrics, clearMLData, startPolling, stopPolling, runPipeline]);
+  }, [fetchAll, refreshMetrics, clearMLData, startPolling, stopPolling, runPipeline, updateTraining]);
 
   const refreshFromBackend = useCallback(async () => {
     const status = await apiGetPipelineStatus();
+    updateTraining(status.is_training);
     setHasUploadedCsv(status.has_uploaded_csv);
+    if (status.is_training) return;
     if (status.has_cache || status.ready) {
       setPipelineReady(true);
       await fetchAll();
       await refreshMetrics();
       startPolling(false);
     }
-  }, [fetchAll, refreshMetrics, startPolling]);
+  }, [fetchAll, refreshMetrics, startPolling, updateTraining]);
 
   const refreshOverview = useCallback(async () => {
     try { setOverview(await apiOverview()); } catch { /* silent */ }
@@ -271,6 +289,7 @@ export function useMLData(): MLDataState {
 
   return {
     pipelineReady,
+    isTraining,
     hasUploadedCsv,
     loadState,
     error,

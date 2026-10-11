@@ -68,15 +68,9 @@ else:
 # ── SMTP Configuration Validation ─────────────────────────────────────────────
 _SMTP_READY = False
 _DEPLOYED = any(os.getenv(name) for name in ("VERCEL", "RENDER", "RAILWAY_ENVIRONMENT"))
-_configured_cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
-_has_public_frontend_origin = any(
-    (urlsplit(origin).hostname or "").lower() not in ("localhost", "127.0.0.1", "::1")
-    for origin in _configured_cors_origins
-)
 _PRODUCTION = (
     os.getenv("APP_ENV", "development").strip().lower() == "production"
     or _DEPLOYED
-    or _has_public_frontend_origin
 )
 
 def _validate_smtp_config() -> dict:
@@ -1149,7 +1143,9 @@ def models_endpoint(state=Depends(_get_user_pipeline_state)):
     df          = data["df"]
 
     anomaly_rate = float(predictions["anomaly_flag"].mean() * 100) if "anomaly_flag" in predictions else 0
-    precision    = round(100 - anomaly_rate, 1)
+    # Anomaly rate is a model output threshold, not a precision score. Without
+    # ground-truth anomaly labels, precision is unknown.
+    precision = None
 
     health_dist = []
     if "health_status" in predictions.columns:
@@ -1177,12 +1173,16 @@ def models_endpoint(state=Depends(_get_user_pipeline_state)):
         pass
 
     forecast_series = []
-    if len(predictions) >= 24:
-        sample = predictions.tail(24)[["timestamp", "consumption_kwh"]].copy()
-        sample["timestamp"] = sample["timestamp"].astype(str)
+    forecast_df = data.get("forecast")
+    if forecast_df is not None and not forecast_df.empty:
         forecast_series = [
-            {"time": r["timestamp"][:16], "value": round(float(r["consumption_kwh"]), 2)}
-            for _, r in sample.iterrows()
+            {
+                "time": str(row["timestamp"])[:16],
+                "value": round(float(row["forecast_kwh"]), 2),
+                "lower": round(float(row["lower_bound"]), 2),
+                "upper": round(float(row["upper_bound"]), 2),
+            }
+            for _, row in forecast_df.iterrows()
         ]
 
     maint_urgency = []
@@ -1198,33 +1198,25 @@ def models_endpoint(state=Depends(_get_user_pipeline_state)):
             maint_urgency.append({"range": lbl, "count": count})
 
     # ── Forecaster metrics (MAE / MAPE) ──────────────────────────────────────
-    mae_val, mape_val = 0.0, 0.0
+    mae_val, mape_val = None, None
     try:
         forecaster = models.get("forecaster")
-        if forecaster and hasattr(forecaster, "feature_cols") and hasattr(forecaster, "scaler"):
-            from sklearn.model_selection import train_test_split
-            from sklearn.metrics import mean_absolute_error
-            import numpy as np
-            X = df[forecaster.feature_cols].fillna(0).values
-            y = df["consumption_kwh"].values
-            _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-            y_pred = forecaster.model.predict(forecaster.scaler.transform(X_test))
-            mae_val  = round(float(mean_absolute_error(y_test, y_pred)), 2)
-            mape_val = round(float(np.mean(np.abs((y_test - y_pred) / np.maximum(np.abs(y_test), 1e-6))) * 100), 2)
+        if forecaster and forecaster.validation_metrics:
+            mae_val = round(float(forecaster.validation_metrics["mae"]), 2)
+            mape_val = round(float(forecaster.validation_metrics["mape"]), 2)
     except Exception as e:
         logger.warning(f"[Models] MAE/MAPE calc failed: {e}")
 
     # ── Efficiency metrics (silhouette, n_clusters) ───────────────────────────
-    silhouette_val, n_clusters_val = 0.0, 4
+    silhouette_val, n_clusters_val = None, None
     try:
         eff_model = models.get("efficiency")
         if eff_model and hasattr(eff_model, "kmeans"):
-            from sklearn.preprocessing import StandardScaler
             n_clusters_val = int(eff_model.kmeans.n_clusters)
             cols = [c for c in eff_model.feature_cols if c in predictions.columns]
             if cols:
                 from sklearn.metrics import silhouette_score
-                X_eff = StandardScaler().fit_transform(predictions[cols].fillna(0))
+                X_eff = eff_model.scaler.transform(predictions[cols].fillna(0))
                 labels = eff_model.kmeans.predict(X_eff)
                 if len(set(labels)) > 1:
                     silhouette_val = round(float(silhouette_score(X_eff, labels, sample_size=min(2000, len(X_eff)))), 3)
@@ -1232,11 +1224,15 @@ def models_endpoint(state=Depends(_get_user_pipeline_state)):
         logger.warning(f"[Models] Silhouette calc failed: {e}")
 
     # ── Maintenance metrics (accuracy, critical%) ─────────────────────────────
-    maint_acc_val, critical_pct_val = 0.0, 0.0
+    maint_acc_val, maint_f1_val, critical_pct_val = None, None, None
+    maint_label_source = None
     try:
         maint_model = models.get("maintenance")
-        if maint_model and hasattr(maint_model, "_cv_score") and maint_model._cv_score is not None:
-            maint_acc_val = round(float(maint_model._cv_score) * 100, 1)
+        evaluation = getattr(maint_model, "_evaluation", None)
+        if evaluation:
+            maint_acc_val = round(float(evaluation["accuracy"]) * 100, 1)
+            maint_f1_val = round(float(evaluation["f1_weighted"]) * 100, 1)
+            maint_label_source = evaluation.get("source")
         if "health_status" in predictions.columns:
             critical_pct_val = round(float((predictions["health_status"] == "critical").mean() * 100), 1)
     except Exception as e:
@@ -1256,7 +1252,11 @@ def models_endpoint(state=Depends(_get_user_pipeline_state)):
         "silhouetteScore":     silhouette_val,
         "nClusters":           n_clusters_val,
         "maintenanceAccuracy": maint_acc_val,
+        "maintenanceF1":       maint_f1_val,
+        "maintenanceLabelSource": maint_label_source,
         "criticalPct":         critical_pct_val,
+        "avgEfficiencyScore":  round(float(predictions["efficiency_score"].mean()), 1)
+                                if "efficiency_score" in predictions else None,
     }
 
 
@@ -1302,65 +1302,19 @@ def pipeline_stats(state=Depends(_get_user_pipeline_state)):
 #  METRICS ENDPOINTS
 # ══════════════════════════════════════════════════════════
 
-def _create_ground_truth_labels(df):
-    import numpy as np
-    score = (
-        (df["consumption_kwh"] > df["consumption_kwh"].quantile(0.85)).astype(int) * 2 +
-        (df.get("voltage", pd.Series([230]*len(df))).between(225, 235) == False).astype(int) +
-        (df.get("temperature", pd.Series([25]*len(df))) > 35).astype(int)
-    )
-    labels = pd.cut(score, bins=[-1, 0, 2, 10], labels=["healthy", "warning", "critical"])
-    labels = labels.astype(str).values
-    n = len(labels)
-    np.random.seed(42)
-    flip_indices = np.random.choice(n, size=int(n * 0.06), replace=False)
-    label_options = ["healthy", "warning", "critical"]
-    for i in flip_indices:
-        current = labels[i]
-        labels[i] = np.random.choice([l for l in label_options if l != current])
-    return pd.Series(labels, index=df.index)
-
-
 def _get_classification_metrics_data(data):
     import numpy as np
-    df          = data.get("df")
-    models      = data.get("models", {})
+    models = data.get("models", {})
     maint_model = models.get("maintenance")
-
-    if df is None or df.empty:
+    evaluation = getattr(maint_model, "_evaluation", None)
+    if not evaluation:
         return None, None, None, None
-
-    test_size = max(100, int(len(df) * 0.2))
-    test_df   = df.tail(test_size).copy()
-    y_true    = _create_ground_truth_labels(test_df)
-
-    if maint_model and hasattr(maint_model, "model") and hasattr(maint_model, "feature_cols"):
-        try:
-            X_test = maint_model.scaler.transform(test_df[maint_model.feature_cols].fillna(0))
-            y_pred = maint_model.model.predict(X_test)
-            y_prob = maint_model.model.predict_proba(X_test)
-        except Exception as e:
-            logger.warning(f"Model predict failed, using cache: {e}")
-            predictions = data.get("predictions")
-            if predictions is not None and len(predictions) >= test_size:
-                pt     = predictions.tail(test_size)
-                y_pred = pt["health_status"].values if "health_status" in pt.columns else y_true.values
-                pcols  = ["prob_healthy", "prob_warning", "prob_critical"]
-                y_prob = pt[pcols].values if all(c in pt.columns for c in pcols) else None
-            else:
-                y_pred, y_prob = y_true.values, None
-    else:
-        predictions = data.get("predictions")
-        if predictions is not None and len(predictions) >= test_size:
-            pt     = predictions.tail(test_size)
-            y_pred = pt["health_status"].values if "health_status" in pt.columns else y_true.values
-            pcols  = ["prob_healthy", "prob_warning", "prob_critical"]
-            y_prob = pt[pcols].values if all(c in pt.columns for c in pcols) else None
-        else:
-            y_pred, y_prob = y_true.values, None
-
-    classes = np.array(["healthy", "warning", "critical"])
-    return np.array(y_true), np.array(y_pred), y_prob, classes
+    return (
+        np.asarray(evaluation["y_true"]),
+        np.asarray(evaluation["y_pred"]),
+        np.asarray(evaluation["y_prob"]),
+        np.asarray(evaluation["classes"]),
+    )
 
 
 @app.get("/api/metrics/confusion-matrix")
@@ -1374,7 +1328,7 @@ def get_confusion_matrix(state=Depends(_get_user_pipeline_state)):
         raise HTTPException(500, "A required metrics module is unavailable")
     y_true, y_pred, y_prob, classes = _get_classification_metrics_data(data)
     if y_true is None:
-        return {"error": "No data available", "detail": "Could not generate classification metrics"}
+        raise HTTPException(503, "Classification evaluation is not available for this model run")
     metrics      = MetricsCalculator.classification_metrics(y_true, y_pred, y_prob)
     classes_list = metrics.get("classes", ["healthy", "warning", "critical"])
     return {
@@ -1397,12 +1351,7 @@ def get_roc_curves(state=Depends(_get_user_pipeline_state)):
     data                             = _get_pipeline_data(state)
     y_true, y_pred, y_prob, classes  = _get_classification_metrics_data(data)
     if y_true is None:
-        return {"error": "No data available"}
-    if y_prob is None:
-        from sklearn.preprocessing import label_binarize
-        y_bin  = label_binarize(y_pred, classes=classes).astype(float)
-        y_prob = np.clip(y_bin * 0.7 + np.random.uniform(0.1, 0.3, y_bin.shape), 0, 1)
-        y_prob = y_prob / y_prob.sum(axis=1, keepdims=True)
+        raise HTTPException(503, "Classification evaluation is not available for this model run")
     roc_data = MetricsCalculator.compute_roc_curves(y_true, y_prob, classes)
     return {
         "curves":     roc_data["curves"],
@@ -1420,12 +1369,7 @@ def get_precision_recall(state=Depends(_get_user_pipeline_state)):
     data                             = _get_pipeline_data(state)
     y_true, y_pred, y_prob, classes  = _get_classification_metrics_data(data)
     if y_true is None:
-        return {"error": "No data available"}
-    if y_prob is None:
-        from sklearn.preprocessing import label_binarize
-        y_bin  = label_binarize(y_pred, classes=classes).astype(float)
-        y_prob = np.clip(y_bin * 0.7 + np.random.uniform(0.1, 0.3, y_bin.shape), 0, 1)
-        y_prob = y_prob / y_prob.sum(axis=1, keepdims=True)
+        raise HTTPException(503, "Classification evaluation is not available for this model run")
     pr_data = MetricsCalculator.compute_pr_curves(y_true, y_prob, classes)
     return {
         "curves":    pr_data["curves"],
@@ -1456,13 +1400,14 @@ def get_model_comparison(state=Depends(_get_user_pipeline_state)):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
         if hasattr(forecaster, "scaler") and hasattr(forecaster, "model"):
             y_pred = forecaster.model.predict(forecaster.scaler.transform(X_test))
-            comparator.add_result("XGBoost Forecaster", y_test, y_pred, task_type="regression")
+            model_name = f"{type(forecaster.model).__name__} Forecaster"
+            comparator.add_result(model_name, y_test, y_pred, task_type="regression")
         else:
             comparator.add_result("XGBoost Forecaster (Fallback)", y_test,
                                   np.full_like(y_test, y_train.mean()), task_type="regression")
         comparator.add_result("Baseline (Mean)", y_test,
                               np.full_like(y_test, y_train.mean()), task_type="regression")
-        y_persist    = np.roll(y_test, 1); y_persist[0] = y_test[0]
+        y_persist    = np.roll(y_test, 1); y_persist[0] = y_train[-1]
         comparator.add_result("Persistence (Lag-1)", y_test, y_persist, task_type="regression")
     comparator.get_comparison_table("regression")
     return comparator.get_comparison_json()

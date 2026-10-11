@@ -1,30 +1,34 @@
 @echo off
+setlocal
 cd /d "%~dp0"
 
-echo ======================================
-echo Starting Energy Diagnostic System
-echo ======================================
-echo.
+ echo ======================================
+ echo Starting Energy Diagnostic System
+ echo ======================================
+ echo.
 
-REM -------- BACKEND --------
-echo Starting Backend...
-start cmd /k "cd backend && venv\Scripts\activate && python api.py"
+ if not exist "backend\venv\Scripts\python.exe" (
+   echo ERROR: Backend virtual environment is missing.
+   echo Create backend\venv and install backend\requirements.txt first.
+   pause
+   exit /b 1
+ )
 
-REM Wait for backend to fully start
-timeout /t 6 > nul
+ start "Energy Diagnostics Backend" cmd /k "cd /d ""%~dp0backend"" && ""%~dp0backend\venv\Scripts\python.exe"" api.py"
+ timeout /t 6 > nul
 
-REM -------- FRONTEND --------
-echo Starting Frontend...
-start cmd /k "cd frontend && npm run dev"
+ if not exist "frontend\node_modules" (
+   echo ERROR: Frontend dependencies are missing. Run npm install in frontend first.
+   pause
+   exit /b 1
+ )
+ start "Energy Diagnostics Frontend" cmd /k "cd /d ""%~dp0frontend"" && npm run dev"
+ timeout /t 5 > nul
+ start "" "http://localhost:5173"
 
-timeout /t 5 > nul
-
-REM -------- AUTO OPEN BROWSER --------
-start "" "http://localhost:5173"
-
-echo.
-echo ======================================
-echo  Application Started!
-echo  Backend:  http://localhost:8000
-echo  Frontend: http://localhost:5173
-echo ======================================
+ echo.
+ echo ======================================
+ echo  Application Started!
+ echo  Backend:  http://localhost:8000
+ echo  Frontend: http://localhost:5173
+ echo ======================================

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, ReactNode, useRef } from "react";
 import Papa from "papaparse";
+import { apiGetPipelineStatus, apiUploadCsv } from "./api";
 
 export interface CsvRow {
   [key: string]: string | number | null;
@@ -290,70 +291,65 @@ export const CsvProvider = ({ children }: { children: ReactNode }) => {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const columnsRef = useRef<string[]>([]);
 
-  const uploadCsv = useCallback((file: File): Promise<void> => {
+  const uploadCsv = useCallback(async (file: File): Promise<void> => {
     if (!file.name.endsWith(".csv")) {
       setError("Please upload a .csv file");
       setStatus("error");
-      return Promise.reject(new Error("Please upload a .csv file"));
+      throw new Error("Please upload a .csv file");
     }
-    setStatus("uploading");
+
     setError(null);
-    setFileName(file.name);
-    setAnalytics(null);
+    try {
+      const pipelineStatus = await apiGetPipelineStatus();
+      if (pipelineStatus.is_training) {
+        throw new Error("ML training is in progress. Wait for it to finish before uploading another CSV.");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not check pipeline status";
+      setError(message);
+      setStatus("error");
+      throw err;
+    }
 
-    return new Promise<void>((resolve, reject) => Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: false,
-      complete: async (results) => {
-        if (results.errors.length > 0 && results.data.length === 0) {
-          setError(`Parse error: ${results.errors[0].message}`);
-          setStatus("error");
-          reject(new Error(`Parse error: ${results.errors[0].message}`));
-          return;
-        }
+    setStatus("uploading");
+    try {
+      const results = await new Promise<Papa.ParseResult<CsvRow>>((resolve, reject) => Papa.parse<CsvRow>(file, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        complete: resolve,
+        error: reject,
+      }));
 
-        const cols = (results.meta.fields || []).filter(Boolean);
-        columnsRef.current = cols;
-        const data = results.data as CsvRow[];
-        setRawData(data);
+      if (results.errors.length > 0 && results.data.length === 0) {
+        throw new Error(`Parse error: ${results.errors[0].message}`);
+      }
 
-        const { consumptionCol, voltageCol, timeCol } = inferColumns(data, cols);
+      const cols = (results.meta.fields || []).filter(Boolean);
+      const data = results.data;
+      const { consumptionCol, voltageCol, timeCol } = inferColumns(data, cols);
+      const parsed: ParsedRow[] = data.map((row, i) => ({
+        raw: row,
+        date: timeCol ? tryParseDate(row[timeCol]) : null,
+        consumption: consumptionCol ? normalizeNumber(row[consumptionCol]) : null,
+        voltage: voltageCol ? normalizeNumber(row[voltageCol]) : null,
+        timeLabel: timeCol ? String(row[timeCol]) : `Row ${i + 1}`,
+      }));
 
-        const parsed: ParsedRow[] = data.map((row, i) => ({
-          raw: row,
-          date: timeCol ? tryParseDate(row[timeCol]) : null,
-          consumption: consumptionCol ? normalizeNumber(row[consumptionCol]) : null,
-          voltage: voltageCol ? normalizeNumber(row[voltageCol]) : null,
-          timeLabel: timeCol ? String(row[timeCol]) : `Row ${i + 1}`,
-        }));
-
-        setParsedRows(parsed);
-        setAnalytics(computeAnalytics(parsed, cols));
-        
-        // Upload to backend
-        try {
-          const { apiUploadCsv } = await import("./api");
-          await apiUploadCsv(file);
-          console.log("✓ CSV uploaded to backend");
-        } catch (err) {
-          console.warn("Backend upload failed:", err);
-          const message = err instanceof Error ? err.message : "Backend upload failed";
-          setError(`CSV parsed locally, but backend upload failed: ${message}`);
-          setStatus("error");
-          reject(err instanceof Error ? err : new Error(message));
-          return;
-        }
-        
-        setStatus("ready");
-        resolve();
-      },
-      error: (err) => {
-        setError(err.message);
-        setStatus("error");
-        reject(err);
-      },
-    }));
+      // Backend acceptance is authoritative: do not replace the displayed dataset before this succeeds.
+      await apiUploadCsv(file);
+      columnsRef.current = cols;
+      setRawData(data);
+      setParsedRows(parsed);
+      setFileName(file.name);
+      setAnalytics(computeAnalytics(parsed, cols));
+      setStatus("ready");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "CSV upload failed";
+      setError(message);
+      setStatus("error");
+      throw err instanceof Error ? err : new Error(message);
+    }
   }, []);
 
   const runAnalytics = useCallback(async (dateFrom?: Date | null, dateTo?: Date | null) => {

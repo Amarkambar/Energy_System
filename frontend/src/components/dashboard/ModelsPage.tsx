@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { SHAP_FEATURES } from "@/lib/dashboard-data";
 import { useCsvData } from "@/lib/csv-context";
 import { useMlContext } from "@/lib/ml-context";
 import EmptyChartState from "./EmptyChartState";
@@ -86,32 +85,26 @@ const ModelsPage = () => {
   }, [hasData, activeTab, pipelineReady, refreshMetrics]);
 
   // Real model metrics from backend
-  const anomalyRate = mlReady
-    ? String((mlModels.anomalyRate as number).toFixed(1))
-    : hasData ? ((analytics!.anomalyData.slice(7).reduce((s, d) => s + d.count, 0) / Math.max(1, analytics!.filteredRowCount)) * 100).toFixed(1)
-    : "—";
-  const precision = mlReady
-    ? String((mlModels.precision as number).toFixed(1))
-    : hasData ? (100 - parseFloat(anomalyRate)).toFixed(1)
+  const anomalyRate = mlReady && typeof mlModels.anomalyRate === "number"
+    ? mlModels.anomalyRate.toFixed(1)
     : "—";
 
   const forecastData = mlReady
-    ? (mlModels.forecastSeries as {time:string;value:number}[]) ?? []
-    : hasData && analytics!.consumptionTimeSeries.length > 5
-      ? analytics!.consumptionTimeSeries.slice(-24).map(d => ({ time: d.time, value: d.value }))
-      : [];
+    ? ((mlModels.forecastSeries as {time:string;value:number;lower?:number;upper?:number}[]) ?? []).map(point => ({
+        ...point,
+        residualRange: typeof point.lower === "number" && typeof point.upper === "number"
+          ? [point.lower, point.upper]
+          : undefined,
+      }))
+    : [];
 
   const maintData = mlReady
     ? (mlModels.healthDist as {name:string;value:number;color:string}[]) ?? []
-    : hasData ? [
-        { name: "Healthy", value: Math.round((1 - parseFloat(anomalyRate) / 100) * analytics!.filteredRowCount), color: COLORS.accent2 },
-        { name: "Warning", value: Math.round(parseFloat(anomalyRate) / 200 * analytics!.filteredRowCount), color: COLORS.warn },
-        { name: "Critical", value: Math.round(parseFloat(anomalyRate) / 200 * analytics!.filteredRowCount), color: COLORS.danger },
-      ] : [];
+    : [];
 
   const clusterData = mlReady
-    ? (mlModels.clusterDist as {name:string;value:number;color:string}[]).map(d => ({ name: d.name, value: d.value, color: d.color })) ?? []
-    : hasData ? analytics!.hourlyDistribution.map(d => ({ name: d.name, value: d.hours, color: d.color })) : [];
+    ? ((mlModels.clusterDist as {name:string;value:number;color:string}[]) ?? []).map(d => ({ name: d.name, value: d.value, color: d.color }))
+    : [];
 
   const shapFeatures = mlReady
     ? (mlModels.shapFeatures as {feature:string;importance:number}[]) ?? []
@@ -188,17 +181,17 @@ const ModelsPage = () => {
       {activeTab === "models" && (
         <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
           {/* Anomaly Detection */}
-          <ModelCard icon="🔍" iconBg="bg-primary/10" name="Anomaly Detection" algo="Isolation Forest · LSTM Autoencoder · SHAP"
-            statusText={hasData ? `Active · ${anomalyRate}% anomaly rate` : undefined}
+          <ModelCard icon="🔍" iconBg="bg-primary/10" name="Anomaly Detection" algo="Isolation Forest · SHAP importance when available"
+            statusText={mlReady ? `Trained · ${anomalyRate}% flagged` : hasData ? "Waiting for ML pipeline" : undefined}
             metrics={[
-              { val: hasData ? `${precision}%` : "—", label: "Precision", color: COLORS.accent },
-              { val: hasData ? `${anomalyRate}%` : "—", label: "Anomaly Rate", color: COLORS.accent },
-              { val: hasData ? "0.05" : "—", label: "Contamination", color: COLORS.accent },
+              { val: mlReady ? `${anomalyRate}%` : "—", label: "Flagged Rate", color: COLORS.accent },
+              { val: mlReady ? "5%" : "—", label: "Configured contamination", color: COLORS.accent },
+              { val: "—", label: "Precision (needs labels)", color: COLORS.accent },
             ]}>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2.5">SHAP Feature Importance</div>
-            {hasData ? (
+            <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2.5">SHAP feature importance</div>
+          {shapFeatures.length > 0 ? (
               <div className="flex flex-col gap-2">
-                {(shapFeatures.length > 0 ? shapFeatures.map(f => ({ name: f.feature, val: f.importance })) : SHAP_FEATURES).map((f) => (
+                {shapFeatures.map(f => ({ name: f.feature, val: f.importance })).map((f) => (
                   <div key={f.name} className="flex items-center gap-2.5">
                     <div className="w-[180px] text-[11px] text-muted-foreground text-right shrink-0">{f.name}</div>
                     <div className="flex-1 h-2 bg-bg3 rounded overflow-hidden">
@@ -210,34 +203,30 @@ const ModelsPage = () => {
                 ))}
               </div>
             ) : (
-              <EmptyChartState message="Run Analytics to see real SHAP feature importance" />
+              <EmptyChartState message="Run the ML pipeline to calculate feature importance" />
             )}
           </ModelCard>
 
           {/* Demand Forecasting */}
-          <ModelCard icon="📈" iconBg="bg-secondary/10" name="Demand Forecasting" algo="XGBoost · Ensemble · Lag + Rolling features"
-            statusText={hasData ? "Forecasting active" : undefined}
+          <ModelCard icon="📈" iconBg="bg-secondary/10" name="Demand Forecasting" algo="Tree-based regression · recursive lag/rolling features"
+            statusText={mlReady ? "Forecast model trained" : hasData ? "Waiting for ML pipeline" : undefined}
             metrics={[
               {
                 // FIX: was `(peakUsage || 0 - averageUsage)` — operator precedence bug. Now correctly: (peak - avg) * 0.08
-                val: mlReady
-                  ? String((mlModels.mae as number ?? 0).toFixed(1))
-                  : hasData
-                    ? (((analytics?.peakUsage ?? 0) - (analytics?.averageUsage ?? 0)) * 0.08).toFixed(1)
-                    : "—",
-                label: "MAE (kWh)", color: COLORS.accent2,
+                val: mlReady && typeof mlModels.mae === "number"
+                  ? mlModels.mae.toFixed(1)
+                  : "—",
+                label: "Rolling Holdout MAE (kWh)", color: COLORS.accent2,
               },
               {
-                val: mlReady
-                  ? String((mlModels.mape as number ?? 0).toFixed(1)) + "%"
-                  : hasData
-                    ? ((((analytics?.peakUsage ?? 0) - (analytics?.averageUsage ?? 0)) / Math.max(1, analytics?.averageUsage ?? 1)) * 100 * 0.04).toFixed(1) + "%"
-                    : "—",
-                label: "MAPE", color: COLORS.accent2,
+                val: mlReady && typeof mlModels.mape === "number"
+                  ? `${mlModels.mape.toFixed(1)}%`
+                  : "—",
+                label: "Rolling Holdout MAPE", color: COLORS.accent2,
               },
-              { val: hasData ? "24h" : "—", label: "Horizon", color: COLORS.accent2 },
+              { val: mlReady ? "24h" : "—", label: "Horizon", color: COLORS.accent2 },
             ]}>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2">Forecast confidence chart</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2">24-hour forecast · approximate validation-residual range</div>
             {forecastData.length > 0 ? (
               <ResponsiveContainer width="100%" height={120}>
                 <LineChart data={forecastData}>
@@ -245,23 +234,31 @@ const ModelsPage = () => {
                   <XAxis dataKey="time" tick={{ fill: COLORS.muted, fontSize: 9, fontFamily: "Space Mono" }} interval={Math.max(1, Math.floor(forecastData.length / 6))} />
                   <YAxis tick={{ fill: COLORS.muted, fontSize: 9, fontFamily: "Space Mono" }} />
                   <Tooltip {...tooltipStyle} />
+                  <Area type="monotone" dataKey="residualRange" stroke="none" fill={COLORS.accent2} fillOpacity={0.14} isAnimationActive={false} />
                   <Line type="monotone" dataKey="value" stroke={COLORS.accent2} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyChartState message="Upload data to generate forecasts" />
+              <EmptyChartState message="Run the ML pipeline to generate a forecast" />
             )}
           </ModelCard>
 
           {/* Predictive Maintenance */}
-          <ModelCard icon="🔧" iconBg="bg-warn/10" name="Predictive Maintenance" algo="Random Forest · 3-class classifier"
-            statusText={hasData ? `Monitoring ${analytics?.filteredRowCount || 0} readings` : undefined}
+          <ModelCard icon="🔧" iconBg="bg-warn/10" name="Predictive Maintenance" algo="Gradient Boosting · 3-class classifier"
+            statusText={mlReady ? `Predictions for ${maintData.reduce((sum, item) => sum + item.value, 0).toLocaleString()} readings` : hasData ? "Waiting for ML pipeline" : undefined}
             metrics={[
-              { val: mlReady ? String((mlModels.maintenanceAccuracy as number ?? 0).toFixed(1)) + "%" : hasData ? (100 - parseFloat(anomalyRate) * 0.8).toFixed(1) + "%" : "—", label: "Accuracy", color: COLORS.warn },
-              { val: mlReady ? String((mlModels.criticalPct as number ?? 0).toFixed(1)) + "%" : hasData ? (parseFloat(anomalyRate) * 0.5).toFixed(1) + "%" : "—", label: "Critical %", color: COLORS.warn },
-              { val: hasData ? "Adaptive" : "—", label: "Estimators", color: COLORS.warn },
+              { val: mlReady && typeof mlModels.maintenanceAccuracy === "number" ? `${mlModels.maintenanceAccuracy.toFixed(1)}%` : "—", label: "Holdout Accuracy", color: COLORS.warn },
+              { val: mlReady && typeof mlModels.maintenanceF1 === "number" ? `${mlModels.maintenanceF1.toFixed(1)}%` : "—", label: "Holdout Weighted F1", color: COLORS.warn },
+              { val: mlReady ? (String(mlModels.maintenanceLabelSource || "").startsWith("uploaded:") ? "Uploaded" : "Generated") : "—", label: "Label Source", color: COLORS.warn },
             ]}>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2">Health class distribution</div>
+            {mlReady && (
+              <p className="mb-3 text-[10px] leading-relaxed text-warn">
+                {mlModels.maintenanceLabelSource === "rule_generated"
+                  ? "Evaluation labels were generated from signal rules; these scores do not verify real equipment outcomes."
+                  : "Holdout scores compare predictions with uploaded labels; their validity depends on label quality."}
+              </p>
+            )}
+            <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2">Predicted health class distribution</div>
             {maintData.length > 0 ? (
               <ResponsiveContainer width="100%" height={120}>
                 <BarChart data={maintData} layout="vertical">
@@ -275,29 +272,29 @@ const ModelsPage = () => {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyChartState message="Upload data for maintenance predictions" />
+              <EmptyChartState message="Run the ML pipeline for maintenance predictions" />
             )}
           </ModelCard>
 
           {/* Efficiency Scoring */}
           <ModelCard icon="🎯" iconBg="bg-destructive/10" name="Efficiency Scoring" algo="K-Means Clustering · Percentile ranking"
-            statusText={hasData ? "Scoring all readings" : undefined}
+            statusText={mlReady ? "Clusters fitted to uploaded readings" : hasData ? "Waiting for ML pipeline" : undefined}
             metrics={[
               {
                 // FIX: was hardcoded "0.62" — now reads real silhouette from backend
-                val: mlReady
-                  ? String((mlModels.silhouetteScore as number ?? 0).toFixed(3))
-                  : hasData ? "—" : "—",
-                label: "Silhouette", color: COLORS.danger,
+                val: mlReady && typeof mlModels.silhouetteScore === "number"
+                  ? mlModels.silhouetteScore.toFixed(3)
+                  : "—",
+                label: "Training silhouette", color: COLORS.danger,
               },
               {
                 // FIX: was hardcoded "4" — now reads real cluster count from backend
-                val: mlReady
-                  ? String(mlModels.nClusters as number ?? 4)
-                  : hasData ? "4" : "—",
+                val: mlReady && typeof mlModels.nClusters === "number"
+                  ? String(mlModels.nClusters)
+                  : "—",
                 label: "Clusters", color: COLORS.danger,
               },
-              { val: hasData ? Math.round((analytics?.averageUsage || 0) / (analytics?.peakUsage || 1) * 100).toString() : "—", label: "Avg Score", color: COLORS.danger },
+              { val: mlReady && typeof mlModels.avgEfficiencyScore === "number" ? `${mlModels.avgEfficiencyScore.toFixed(1)}` : "—", label: "Avg Score", color: COLORS.danger },
             ]}>
             <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2">Cluster size breakdown</div>
             {clusterData.length > 0 && clusterData.some((d) => d.value > 0) ? (
@@ -311,7 +308,7 @@ const ModelsPage = () => {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyChartState message="Upload data for cluster analysis" />
+              <EmptyChartState message="Run the ML pipeline for cluster analysis" />
             )}
           </ModelCard>
         </div>
@@ -320,6 +317,13 @@ const ModelsPage = () => {
       {/* Classification Metrics Tab */}
       {activeTab === "metrics" && (
         <div className="space-y-4">
+          {mlReady && (
+            <p className="rounded-md border border-border bg-card px-3 py-2 text-[11px] text-muted-foreground">
+              Classification charts use held-out rows. {mlModels.maintenanceLabelSource === "rule_generated"
+                ? "Labels were generated from signal rules, so these charts measure agreement with those rules rather than verified equipment outcomes."
+                : "Scores compare predictions with the uploaded labels and depend on their quality."}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
             {/* Confusion Matrix */}
             <ConfusionMatrix
@@ -337,7 +341,7 @@ const ModelsPage = () => {
               modelImportance={featureImportance?.model_importance || null}
               pcaVariance={featureImportance?.pca_analysis?.scree_plot || null}
               title="Feature Analysis"
-              subtitle="SHAP, Model Importance & PCA"
+              subtitle="SHAP when available · model importance · PCA"
             />
           </div>
 
