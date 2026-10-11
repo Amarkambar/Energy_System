@@ -3,7 +3,7 @@
 
 # ── Core API ──────────────────────────────────────────────────────────────────
 fastapi>=0.111.0
-uvicorn>=0.29.0
+uvicorn>=0.54.0
 mangum>=0.17.0
 pydantic[email]>=2.6.0
 pydantic-settings>=2.2.0
